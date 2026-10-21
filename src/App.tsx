@@ -101,6 +101,28 @@ export default function App() {
     setActiveTab('flame');
   };
 
+  // Apply NASA Experiment Environmental Conditions to Chamber
+  const handleApplyExperimentConditions = (conditions: {
+    gravityG: number;
+    o2Pct: number;
+    co2Pct: number;
+    ventilationSpeed: number;
+    fuelName: string;
+    pressureKpa?: number;
+  }) => {
+    setGravityG(conditions.gravityG);
+    setVentilationSpeed(conditions.ventilationSpeed);
+    if (conditions.pressureKpa) setPressureKpa(conditions.pressureKpa);
+    setGases((prev) => ({
+      ...prev,
+      O2: conditions.o2Pct,
+      CO2: conditions.co2Pct,
+      N2: Math.max(0, 100 - conditions.o2Pct - conditions.co2Pct),
+    }));
+    setIsIgnited(true);
+    setActiveTab('flame');
+  };
+
   // Calculated flame temp estimation for D3 scatter plot
   const o2 = gases['O2'] ?? 21;
   const co2 = gases['CO2'] ?? 0.4;
@@ -127,9 +149,12 @@ export default function App() {
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className="text-slate-400 mr-1 text-[11px]">Quick Setup:</span>
             <button
-              onClick={() => handleSelectPreset(SIMPLE_PRESETS[0])}
+              onClick={() => {
+                const p = SIMPLE_PRESETS.find((x) => x.id === 'zero_g');
+                if (p) handleSelectPreset(p);
+              }}
               className={`px-3 py-1 rounded-lg border transition-all ${
-                gravityG === 0 && ventilationSpeed > 0
+                gravityG === 0 && ventilationSpeed > 0 && currentPresetId === 'zero_g'
                   ? 'bg-cyan-500 text-slate-950 font-bold border-cyan-400'
                   : 'bg-slate-900 text-slate-300 border-slate-800 hover:text-white'
               }`}
@@ -137,7 +162,36 @@ export default function App() {
               0-G Space (ISS)
             </button>
             <button
-              onClick={() => handleSelectPreset(SIMPLE_PRESETS[2])}
+              onClick={() => {
+                const p = SIMPLE_PRESETS.find((x) => x.id === 'nasa_flex');
+                if (p) handleSelectPreset(p);
+              }}
+              className={`px-3 py-1 rounded-lg border transition-all ${
+                currentPresetId === 'nasa_flex'
+                  ? 'bg-cyan-400 text-slate-950 font-bold border-cyan-300'
+                  : 'bg-slate-900 text-slate-300 border-slate-800 hover:text-white'
+              }`}
+            >
+              NASA FLEX (Cool Flame)
+            </button>
+            <button
+              onClick={() => {
+                const p = SIMPLE_PRESETS.find((x) => x.id === 'nasa_sofie_gel');
+                if (p) handleSelectPreset(p);
+              }}
+              className={`px-3 py-1 rounded-lg border transition-all ${
+                currentPresetId === 'nasa_sofie_gel'
+                  ? 'bg-purple-500 text-white font-bold border-purple-400'
+                  : 'bg-slate-900 text-slate-300 border-slate-800 hover:text-white'
+              }`}
+            >
+              NASA SOPHIA-GEL
+            </button>
+            <button
+              onClick={() => {
+                const p = SIMPLE_PRESETS.find((x) => x.id === 'earth_1g');
+                if (p) handleSelectPreset(p);
+              }}
               className={`px-3 py-1 rounded-lg border transition-all ${
                 gravityG === 1
                   ? 'bg-indigo-500 text-slate-950 font-bold border-indigo-400'
@@ -147,7 +201,10 @@ export default function App() {
               1-G Earth Normal
             </button>
             <button
-              onClick={() => handleSelectPreset(SIMPLE_PRESETS[3])}
+              onClick={() => {
+                const p = SIMPLE_PRESETS.find((x) => x.id === 'hyper_10g');
+                if (p) handleSelectPreset(p);
+              }}
               className={`px-3 py-1 rounded-lg border transition-all ${
                 gravityG >= 9.9
                   ? 'bg-rose-500 text-white font-bold border-rose-400'
@@ -157,7 +214,10 @@ export default function App() {
               10-G Hypergravity
             </button>
             <button
-              onClick={() => handleSelectPreset(SIMPLE_PRESETS[4])}
+              onClick={() => {
+                const p = SIMPLE_PRESETS.find((x) => x.id === 'methane_leak');
+                if (p) handleSelectPreset(p);
+              }}
               className={`px-3 py-1 rounded-lg border transition-all ${
                 (gases['CH4'] ?? 0) > 0
                   ? 'bg-orange-500 text-slate-950 font-bold border-orange-400'
@@ -167,7 +227,10 @@ export default function App() {
               Methane Flare (CH₄)
             </button>
             <button
-              onClick={() => handleSelectPreset(SIMPLE_PRESETS[5])}
+              onClick={() => {
+                const p = SIMPLE_PRESETS.find((x) => x.id === 'krypton_thruster');
+                if (p) handleSelectPreset(p);
+              }}
               className={`px-3 py-1 rounded-lg border transition-all ${
                 (gases['Kr'] ?? 0) > 0
                   ? 'bg-fuchsia-500 text-slate-950 font-bold border-fuchsia-400'
@@ -177,7 +240,10 @@ export default function App() {
               Krypton Mix (Kr)
             </button>
             <button
-              onClick={() => handleSelectPreset(SIMPLE_PRESETS[8])}
+              onClick={() => {
+                const p = SIMPLE_PRESETS.find((x) => x.id === 'hypoxic_quench');
+                if (p) handleSelectPreset(p);
+              }}
               className={`px-3 py-1 rounded-lg border transition-all ${
                 o2 <= 12
                   ? 'bg-amber-500 text-slate-950 font-bold border-amber-400'
@@ -266,6 +332,7 @@ export default function App() {
             <FlameExperimentDatasetView
               isEmbedded={true}
               onApplyMeasurementToChamber={handleApplyExperimentMeasurement}
+              onApplyExperimentConditions={handleApplyExperimentConditions}
               gases={gases}
               flameTempK={flameTempK}
               gravityG={gravityG}

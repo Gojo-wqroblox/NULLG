@@ -13,7 +13,13 @@ export interface SimplePreset {
 
 export const SIMPLE_PRESETS: SimplePreset[] = [
   { id: 'zero_g', name: '0-G Space (ISS Air: 21% O₂ / 78% N₂)', gravityG: 0.0, o2: 21, co2: 0.4, ventilation: 0.15 },
-  { id: 'zero_g_stagnant', name: '0-G Stagnant Air (No Fan: 0 m/s)', gravityG: 0.0, o2: 21, co2: 0.4, ventilation: 0.0 },
+  { id: 'nasa_flex', name: 'NASA FLEX (Droplet Cool Flame 0-G)', gravityG: 0.0, o2: 21, co2: 0.0, ventilation: 0.0 },
+  { id: 'nasa_sofie_gel', name: 'NASA SOFIE / SOPHIA GEL (Solid Fuel Limit 0-G)', gravityG: 0.0, o2: 18.5, co2: 0.4, ventilation: 0.05 },
+  { id: 'nasa_sofie_mist', name: 'NASA SOPHIA-MIST (Fabric Quench 0-G)', gravityG: 0.0, o2: 19.0, co2: 0.4, ventilation: 0.04 },
+  { id: 'nasa_saffire', name: 'NASA SAFFIRE (Cygnus Cargo Burn 0-G)', gravityG: 0.0, o2: 21, co2: 0.5, ventilation: 0.20 },
+  { id: 'nasa_bass', name: 'NASA BASS (ISS Glovebox Solids)', gravityG: 0.0, o2: 20.9, co2: 0.4, ventilation: 0.08 },
+  { id: 'nasa_acme_cfm', name: 'NASA ACME/CFM (Space Candle 0-G)', gravityG: 0.0, o2: 21, co2: 0.4, ventilation: 0.0 },
+  { id: 'nasa_acme_bre', name: 'NASA ACME/BRE (Burning Rate Emulator 0-G)', gravityG: 0.0, o2: 21, co2: 0.4, ventilation: 0.10 },
   { id: 'earth_1g', name: '1-G Earth Normal (21% O₂)', gravityG: 1.0, o2: 21, co2: 0.04, ventilation: 0.0 },
   { id: 'hyper_10g', name: '10-G Hypergravity Chimney', gravityG: 10.0, o2: 21, co2: 0.04, ventilation: 0.0 },
   { id: 'methane_leak', name: 'Methane Flare (12% CH₄ / 21% O₂)', gravityG: 0.0, o2: 21, co2: 0.4, ventilation: 0.15, gases: { O2: 21, N2: 66.6, CH4: 12, CO2: 0.4 } },
@@ -83,7 +89,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             }`}
           >
             <Table className="w-3.5 h-3.5" />
-            <span>Experiment Data (Run 101 & 102)</span>
+            <span>NASA Experiments & Data</span>
           </button>
 
           <button

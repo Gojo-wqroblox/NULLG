@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import {
   FlameMeasurement,
   INITIAL_SAMPLE_FLAME_DATASET,
@@ -6,6 +6,7 @@ import {
   parseFlameDatasetCSV,
   exportFlameDatasetToCSV,
 } from '../data/flameExperimentDataset';
+import { NASA_EXPERIMENTS, NasaExperiment } from '../data/nasaExperiments';
 import { FuelDefinition } from '../types';
 import { OxygenTempScatterPlot } from './OxygenTempScatterPlot';
 import {
@@ -26,10 +27,20 @@ import {
   Clock,
   CircleDot,
   Info,
+  Rocket,
+  Compass,
 } from 'lucide-react';
 
 interface FlameExperimentDatasetViewProps {
   onApplyMeasurementToChamber?: (measurement: FlameMeasurement) => void;
+  onApplyExperimentConditions?: (conditions: {
+    gravityG: number;
+    o2Pct: number;
+    co2Pct: number;
+    ventilationSpeed: number;
+    fuelName: string;
+    pressureKpa?: number;
+  }) => void;
   onCloseModal?: () => void;
   isEmbedded?: boolean;
   gases?: Record<string, number>;
@@ -43,6 +54,7 @@ interface FlameExperimentDatasetViewProps {
 
 export const FlameExperimentDatasetView: React.FC<FlameExperimentDatasetViewProps> = ({
   onApplyMeasurementToChamber,
+  onApplyExperimentConditions,
   onCloseModal,
   isEmbedded = false,
   gases,
@@ -53,6 +65,7 @@ export const FlameExperimentDatasetView: React.FC<FlameExperimentDatasetViewProp
   isIgnited = true,
   onGasChange,
 }) => {
+  const [selectedExperimentId, setSelectedExperimentId] = useState<string>('sample_101_102');
   const [dataset, setDataset] = useState<FlameMeasurement[]>(INITIAL_SAMPLE_FLAME_DATASET);
   const [selectedRunFilter, setSelectedRunFilter] = useState<string>('all');
   const [isImporting, setIsImporting] = useState<boolean>(false);
@@ -62,23 +75,80 @@ export const FlameExperimentDatasetView: React.FC<FlameExperimentDatasetViewProp
   const [graphViewMode, setGraphViewMode] = useState<'split' | 'overlay'>('split');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const isSampleData = dataset.length === INITIAL_SAMPLE_FLAME_DATASET.length &&
+  // Active NASA Experiment Profile
+  const activeExp: NasaExperiment = useMemo(() => {
+    return (
+      NASA_EXPERIMENTS.find((e) => e.id === selectedExperimentId) ||
+      NASA_EXPERIMENTS[0]
+    );
+  }, [selectedExperimentId]);
+
+  // Check if currently on sample data
+  const isSampleData =
+    selectedExperimentId === 'sample_101_102' &&
+    dataset.length === INITIAL_SAMPLE_FLAME_DATASET.length &&
     dataset.every((d, i) => d.metric_id === INITIAL_SAMPLE_FLAME_DATASET[i].metric_id);
 
-  // Extract unique run IDs
+  // Handle Switching NASA Experiment
+  const handleSelectNasaExperiment = (expId: string) => {
+    setSelectedExperimentId(expId);
+    const exp = NASA_EXPERIMENTS.find((e) => e.id === expId);
+    if (exp) {
+      setDataset(exp.sampleRows);
+      setSelectedRunFilter('all');
+      setImportFeedback({
+        type: 'success',
+        message: `Loaded dataset for ${exp.name}: ${exp.fullName}`,
+      });
+      setTimeout(() => setImportFeedback(null), 4000);
+    }
+  };
+
+  // Extract unique run IDs from active dataset
   const uniqueRuns = Array.from(new Set(dataset.map((d) => String(d.run_id))));
 
-  // Filtered dataset
-  const filteredData = selectedRunFilter === 'all'
-    ? dataset
-    : dataset.filter((d) => String(d.run_id) === selectedRunFilter);
+  // Filtered dataset for table
+  const filteredData =
+    selectedRunFilter === 'all'
+      ? dataset
+      : dataset.filter((d) => String(d.run_id) === selectedRunFilter);
 
-  // Stats
+  // Identify Run A and Run B for the 2 dedicated graphs
+  const runA_Id = activeExp.runs[0] ? String(activeExp.runs[0].run_id) : uniqueRuns[0] || '101';
+  const runB_Id = activeExp.runs[1] ? String(activeExp.runs[1].run_id) : uniqueRuns[1] || '102';
+
+  const runA_Info = activeExp.runs[0] || {
+    name: `Run ${runA_Id}`,
+    description: `Experimental Run ${runA_Id}`,
+    extinctionTimestampSec: null,
+    peakRadiusMm: 6.3,
+  };
+  const runB_Info = activeExp.runs[1] || {
+    name: `Run ${runB_Id}`,
+    description: `Experimental Run ${runB_Id}`,
+    extinctionTimestampSec: null,
+    peakRadiusMm: 7.8,
+  };
+
+  const runAData = dataset.filter((d) => String(d.run_id) === runA_Id);
+  const runBData = dataset.filter((d) => String(d.run_id) === runB_Id);
+
+  const runAExtinction = runAData.find((d) => d.is_extinguished || d.flame_radius_mm === 0);
+  const runBExtinction = runBData.find((d) => d.is_extinguished || d.flame_radius_mm === 0);
+
+  // Maximum scales for Run A & B
+  const maxTimeA = Math.max(...runAData.map((d) => d.timestamp_sec), 2.0);
+  const maxRadiusA = Math.max(...runAData.map((d) => d.flame_radius_mm), 7.0);
+
+  const maxTimeB = Math.max(...runBData.map((d) => d.timestamp_sec), 2.0);
+  const maxRadiusB = Math.max(...runBData.map((d) => d.flame_radius_mm), 8.0);
+
+  // Global Stats
   const totalMeasurements = dataset.length;
   const extinguishedCount = dataset.filter((d) => d.is_extinguished).length;
   const maxRadius = Math.max(...dataset.map((d) => d.flame_radius_mm), 0);
 
-  // CSV File Handler
+  // CSV File Upload Handler
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -105,6 +175,7 @@ export const FlameExperimentDatasetView: React.FC<FlameExperimentDatasetViewProp
     }
 
     setDataset(data);
+    setSelectedExperimentId('custom');
     setSelectedRunFilter('all');
     setIsImporting(false);
     setPasteCsvText('');
@@ -121,13 +192,14 @@ export const FlameExperimentDatasetView: React.FC<FlameExperimentDatasetViewProp
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `nullg_flame_experiment_${Date.now()}.csv`);
+    link.setAttribute('download', `nasa_experiment_${selectedExperimentId}_${Date.now()}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
   const handleResetSample = () => {
+    setSelectedExperimentId('sample_101_102');
     setDataset(INITIAL_SAMPLE_FLAME_DATASET);
     setSelectedRunFilter('all');
     setImportFeedback({
@@ -137,71 +209,94 @@ export const FlameExperimentDatasetView: React.FC<FlameExperimentDatasetViewProp
     setTimeout(() => setImportFeedback(null), 4000);
   };
 
-  // Run 101 data & extinction detection
-  const run101Data = dataset.filter((d) => String(d.run_id) === '101');
-  const run101ExtinctionPoint = run101Data.find((d) => d.is_extinguished || d.flame_radius_mm === 0);
-
-  // Run 102 data
-  const run102Data = dataset.filter((d) => String(d.run_id) === '102');
-
   return (
     <div className={`flex flex-col gap-4 text-slate-100 ${isEmbedded ? '' : 'p-4 sm:p-6 max-w-5xl mx-auto w-full'}`}>
-      {/* Top Banner: Sample Data Notice or Custom Data Status */}
-      {isSampleData ? (
-        <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-950/60 via-slate-900 to-amber-950/40 border border-amber-500/40 shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-fadeIn">
-          <div className="flex items-start sm:items-center gap-3">
-            <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 shrink-0 mt-0.5 sm:mt-0">
-              <AlertTriangle className="w-5 h-5 animate-pulse" />
+      {/* ========================================================================= */}
+      {/* NASA EXPERIMENT SELECTION BAR */}
+      {/* ========================================================================= */}
+      <div className="flex flex-col gap-2 bg-slate-950/95 border border-slate-800 p-3.5 rounded-2xl shadow-xl">
+        <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-slate-800">
+          <div className="flex items-center gap-2">
+            <Rocket className="w-4 h-4 text-cyan-400" />
+            <span className="text-xs font-mono font-bold text-white uppercase tracking-wider">
+              Select NASA Experiment Dataset
+            </span>
+          </div>
+          <span className="text-[10px] font-mono text-slate-400">
+            ISS CIR, Cygnus & Glovebox empirical microgravity datasets
+          </span>
+        </div>
+
+        {/* Experiment Pills */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {NASA_EXPERIMENTS.map((exp) => (
+            <button
+              key={exp.id}
+              onClick={() => handleSelectNasaExperiment(exp.id)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all flex items-center gap-1.5 border active:scale-95 ${
+                selectedExperimentId === exp.id
+                  ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-md shadow-cyan-500/20'
+                  : 'bg-slate-900/90 text-slate-300 border-slate-800 hover:text-white hover:border-slate-700'
+              }`}
+            >
+              <span className="text-[9px] px-1 py-0.2 rounded bg-black/30 font-semibold uppercase">
+                {exp.code}
+              </span>
+              <span>{exp.name}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* ACTIVE EXPERIMENT BRIEFING CARD */}
+      {/* ========================================================================= */}
+      <div className="p-4 rounded-2xl bg-gradient-to-r from-slate-950 via-slate-900 to-indigo-950/40 border border-indigo-500/30 shadow-xl flex flex-col gap-3">
+        <div className="flex items-start justify-between flex-wrap gap-2">
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-bold font-mono text-white">
+                {activeExp.fullName}
+              </span>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-800">
+                {activeExp.agency}
+              </span>
             </div>
-            <div className="text-xs">
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-amber-300 font-mono uppercase tracking-wider">
-                  Sample Data Active (6 Visible Image Rows)
-                </span>
-                <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                  IMAGE SAMPLE ONLY
-                </span>
-              </div>
-              <p className="text-slate-300 mt-0.5">
-                These 6 rows are the exact visible sample measurements from your table image. No artificial rows were invented. You can replace them with your complete CSV anytime.
-              </p>
-            </div>
+            <p className="text-xs text-slate-400 font-mono">
+              Facility: <strong className="text-slate-300">{activeExp.facility}</strong> • PI: <strong className="text-cyan-300">{activeExp.principalInvestigator}</strong>
+            </p>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
+          {/* Quick Apply Conditions to Live Chamber */}
+          {onApplyExperimentConditions && (
             <button
-              onClick={() => setIsImporting(true)}
-              className="w-full sm:w-auto text-xs font-mono font-bold px-3 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 transition-all shadow-md shadow-cyan-500/20 flex items-center justify-center gap-1.5 active:scale-95"
+              onClick={() => onApplyExperimentConditions(activeExp.chamberConditions)}
+              className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-mono font-bold text-xs transition-all shadow-md shadow-cyan-500/20 flex items-center gap-1.5 active:scale-95"
+              title="Apply exact gravity, oxygen %, CO2 %, and airflow to the live chamber"
             >
-              <Upload className="w-3.5 h-3.5" />
-              Replace with Full CSV
+              <Rocket className="w-3.5 h-3.5" />
+              <span>Simulate in Chamber</span>
             </button>
+          )}
+        </div>
+
+        {/* Scientific Discovery & Key Insights */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs font-mono pt-1">
+          <div className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800">
+            <span className="text-cyan-300 font-bold block mb-1">Experiment Overview:</span>
+            <p className="text-slate-300 leading-relaxed text-[11px]">
+              {activeExp.description}
+            </p>
+          </div>
+
+          <div className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800">
+            <span className="text-amber-300 font-bold block mb-1">Scientific Discovery / Physics:</span>
+            <p className="text-slate-300 leading-relaxed text-[11px]">
+              {activeExp.scientificDiscovery}
+            </p>
           </div>
         </div>
-      ) : (
-        <div className="p-3.5 rounded-2xl bg-cyan-950/40 border border-cyan-500/30 shadow-lg flex items-center justify-between gap-3 animate-fadeIn">
-          <div className="flex items-center gap-3 text-xs">
-            <div className="p-2 rounded-xl bg-cyan-500/20 text-cyan-400">
-              <CheckCircle2 className="w-5 h-5" />
-            </div>
-            <div>
-              <span className="font-bold text-cyan-300 font-mono">
-                Custom Complete CSV Loaded ({dataset.length} Rows)
-              </span>
-              <p className="text-slate-300 text-[11px]">
-                Imported across {uniqueRuns.length} experimental runs.
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={handleResetSample}
-            className="text-xs font-mono px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-all flex items-center gap-1.5 active:scale-95"
-          >
-            <RotateCcw className="w-3 h-3 text-amber-400" />
-            Reset to Sample
-          </button>
-        </div>
-      )}
+      </div>
 
       {/* Import Feedback Banner */}
       {importFeedback && (
@@ -221,47 +316,48 @@ export const FlameExperimentDatasetView: React.FC<FlameExperimentDatasetViewProp
         </div>
       )}
 
-      {/* CSV Import Modal / Drawer */}
+      {/* CSV Replacement & Import Modal / Accordion */}
       {isImporting && (
-        <div className="p-4 rounded-2xl bg-slate-950/95 border border-cyan-500/50 shadow-2xl flex flex-col gap-3 animate-fadeIn">
-          <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+        <div className="p-4 rounded-2xl bg-slate-950 border border-cyan-500/50 shadow-2xl flex flex-col gap-4 animate-fadeIn">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-2">
             <div className="flex items-center gap-2">
               <Upload className="w-4 h-4 text-cyan-400" />
-              <span className="text-xs font-mono font-bold text-slate-200 uppercase">
-                Import Complete Flame Dataset (CSV / TSV)
-              </span>
+              <h4 className="text-sm font-bold font-mono text-white">
+                Replace Sample Data with Full CSV
+              </h4>
             </div>
             <button
               onClick={() => setIsImporting(false)}
-              className="text-slate-400 hover:text-white text-xs font-mono"
+              className="text-xs text-slate-400 hover:text-white"
             >
               Cancel
             </button>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Option A: File Picker */}
-            <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 flex flex-col items-center justify-center text-center gap-2 hover:border-cyan-500/40 transition-all">
+            {/* Option A: Upload File */}
+            <div className="flex flex-col gap-2">
+              <label className="text-[11px] font-mono text-slate-300">
+                Option A: Upload .csv or .txt file:
+              </label>
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".csv,.tsv,.txt"
+                accept=".csv,.txt"
                 onChange={handleFileUpload}
                 className="hidden"
-                id="csv-file-input"
+                id="csv-file-upload"
               />
               <label
-                htmlFor="csv-file-input"
-                className="cursor-pointer flex flex-col items-center gap-2 py-4 w-full"
+                htmlFor="csv-file-upload"
+                className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-slate-700 hover:border-cyan-400 rounded-xl cursor-pointer bg-slate-900/50 transition-all text-center gap-2"
               >
-                <div className="p-3 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 hover:scale-110 transition-transform">
-                  <FileText className="w-6 h-6" />
-                </div>
-                <span className="text-xs font-mono font-bold text-cyan-300">
-                  Select CSV File from Computer
+                <Upload className="w-6 h-6 text-cyan-400" />
+                <span className="text-xs font-mono text-slate-300">
+                  Click to select CSV from your computer
                 </span>
-                <span className="text-[10px] text-slate-400">
-                  Supports .csv, .tsv with flame experiment columns
+                <span className="text-[10px] text-slate-500">
+                  Expected columns: metric_id, run_id, timestamp_sec, flame_radius_mm, flame_color, is_extinguished
                 </span>
               </label>
             </div>
@@ -269,8 +365,8 @@ export const FlameExperimentDatasetView: React.FC<FlameExperimentDatasetViewProp
             {/* Option B: Direct CSV Paste */}
             <div className="flex flex-col gap-2">
               <label className="text-[11px] font-mono text-slate-300 flex items-center justify-between">
-                <span>Or Paste Raw CSV Content:</span>
-                <span className="text-[10px] text-slate-500">Auto-detects delimiters</span>
+                <span>Option B: Paste Raw CSV Content:</span>
+                <span className="text-[10px] text-slate-500">Auto-detects commas & tabs</span>
               </label>
               <textarea
                 value={pasteCsvText}
@@ -339,14 +435,14 @@ export const FlameExperimentDatasetView: React.FC<FlameExperimentDatasetViewProp
       </div>
 
       {/* ========================================================================= */}
-      {/* 2 DEDICATED GRAPHS: 1 FOR RUN 101 AND 1 FOR RUN 102 */}
+      {/* 2 DEDICATED GRAPHS: PLOTTING FLAME RADIUS AGAINST TIME */}
       {/* ========================================================================= */}
       <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2">
             <TrendingUp className="w-4 h-4 text-cyan-400" />
             <h4 className="text-xs font-mono font-bold text-slate-200 uppercase tracking-wider">
-              Experiment Data Viewer: Flame Radius Against Time (Run 101 & Run 102)
+              {activeExp.name} Radius vs Time: {runA_Info.name} & {runB_Info.name}
             </h4>
           </div>
 
@@ -361,7 +457,7 @@ export const FlameExperimentDatasetView: React.FC<FlameExperimentDatasetViewProp
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
-                2 Dedicated Graphs (Run 101 & 102)
+                2 Dedicated Graphs ({runA_Id} & {runB_Id})
               </button>
               <button
                 onClick={() => setGraphViewMode('overlay')}
@@ -375,489 +471,381 @@ export const FlameExperimentDatasetView: React.FC<FlameExperimentDatasetViewProp
               </button>
             </div>
 
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold">
-              <span className="w-2 h-2 rounded-full bg-rose-400 animate-ping" />
-              <span>Run 101 Extinction: t = 2.000s</span>
-            </div>
+            {/* Extinction Alert Flag */}
+            {runAExtinction && (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold text-[11px]">
+                <span className="w-2 h-2 rounded-full bg-rose-400 animate-ping" />
+                <span>Run {runA_Id} Extinction: t = {runAExtinction.timestamp_sec.toFixed(3)}s</span>
+              </div>
+            )}
           </div>
         </div>
 
+        {/* SPLIT 2-GRAPH MODE */}
         {graphViewMode === 'split' ? (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* ------------------------------------------------------------------- */}
-          {/* GRAPH 1: RUN 101 (Microgravity Spherical Quenching & Extinction) */}
-          {/* ------------------------------------------------------------------- */}
-          <div className="p-4 rounded-2xl bg-slate-950/90 border border-cyan-500/40 flex flex-col gap-3 shadow-xl relative overflow-hidden">
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-              <div className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded-full bg-cyan-400 shadow-sm shadow-cyan-400/50" />
-                <span className="font-bold font-mono text-sm text-cyan-300">
-                  GRAPH 1: RUN 101
-                </span>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">
-                  Microgravity Quench
-                </span>
-              </div>
-              <span className="text-[10px] font-mono text-slate-400">4 Points (0.100s – 2.000s)</span>
-            </div>
-
-            {/* Prominent Flame Goes Out Banner */}
-            <div className="p-2.5 rounded-xl bg-gradient-to-r from-rose-950/70 via-slate-900 to-rose-950/50 border border-rose-500/50 text-xs font-mono flex items-center justify-between gap-2 shadow-inner">
-              <div className="flex items-center gap-2 text-rose-200">
-                <XCircle className="w-4 h-4 text-rose-400 shrink-0 animate-pulse" />
-                <div>
-                  <span className="font-bold text-white block sm:inline mr-1">
-                    RECORDED FLAME EXTINCTION:
+            {/* ----------------------------------------------------------------- */}
+            {/* GRAPH 1: RUN A */}
+            {/* ----------------------------------------------------------------- */}
+            <div className="p-4 rounded-2xl bg-slate-950/90 border border-cyan-500/40 flex flex-col gap-3 shadow-xl relative overflow-hidden">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                <div className="flex items-center gap-2">
+                  <span className="w-3 h-3 rounded-full bg-cyan-400 shadow-sm shadow-cyan-400/50" />
+                  <span className="font-bold font-mono text-sm text-cyan-300">
+                    GRAPH 1: RUN {runA_Id}
                   </span>
-                  <span>t = <strong className="text-rose-400 text-sm">2.000s</strong> (Radius = 0.00 mm)</span>
-                </div>
-              </div>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/30 text-rose-200 border border-rose-500/60 animate-pulse">
-                GOES OUT
-              </span>
-            </div>
-
-            {/* SVG Plot for RUN 101 */}
-            <div className="relative w-full h-48 bg-slate-900/60 rounded-xl border border-slate-800 p-2 overflow-hidden">
-              <svg className="w-full h-full overflow-visible" viewBox="0 0 360 130">
-                {/* Horizontal grid lines & Y labels */}
-                <line x1="35" y1="20" x2="350" y2="20" stroke="#334155" strokeDasharray="2 2" strokeWidth="0.5" />
-                <text x="5" y="23" fill="#64748b" fontSize="9" fontFamily="monospace">6.0mm</text>
-
-                <line x1="35" y1="58" x2="350" y2="58" stroke="#334155" strokeDasharray="2 2" strokeWidth="0.5" />
-                <text x="5" y="61" fill="#64748b" fontSize="9" fontFamily="monospace">3.0mm</text>
-
-                <line x1="35" y1="100" x2="350" y2="100" stroke="#475569" strokeWidth="1" />
-                <text x="5" y="103" fill="#64748b" fontSize="9" fontFamily="monospace">0.0mm</text>
-
-                {/* X-axis labels */}
-                <text x="45" y="120" fill="#94a3b8" fontSize="9" fontFamily="monospace">0.100s</text>
-                <text x="110" y="120" fill="#94a3b8" fontSize="9" fontFamily="monospace">0.500s</text>
-                <text x="205" y="120" fill="#94a3b8" fontSize="9" fontFamily="monospace">1.200s (PEAK)</text>
-                <text x="295" y="120" fill="#f43f5e" fontSize="9" fontWeight="bold" fontFamily="monospace">2.000s (OUT)</text>
-
-                {/* Vertical extinction guide line at t=2.000s */}
-                <line x1="330" y1="10" x2="330" y2="100" stroke="#f43f5e" strokeWidth="1.5" strokeDasharray="3 3" />
-
-                {(() => {
-                  if (run101Data.length === 0) return null;
-                  const getCoords = (d: FlameMeasurement) => {
-                    const x = 45 + (d.timestamp_sec / 2.0) * 285;
-                    const y = 100 - (d.flame_radius_mm / 7.2) * 85;
-                    return { x, y };
-                  };
-
-                  const coords = run101Data.map(getCoords);
-                  const polylinePoints = coords.map((c) => `${c.x},${c.y}`).join(' ');
-
-                  return (
-                    <>
-                      {/* Gradient Area Fill under Curve */}
-                      <polygon
-                        points={`45,100 ${polylinePoints} 330,100`}
-                        fill="url(#run101AreaGrad)"
-                        opacity="0.25"
-                      />
-                      <defs>
-                        <linearGradient id="run101AreaGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#38bdf8" />
-                          <stop offset="100%" stopColor="#38bdf8" stopOpacity="0" />
-                        </linearGradient>
-                      </defs>
-
-                      {/* Trajectory Line */}
-                      <polyline
-                        fill="none"
-                        stroke="#38bdf8"
-                        strokeWidth="2.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        points={polylinePoints}
-                      />
-
-                      {/* Plotted Data Points */}
-                      {run101Data.map((d) => {
-                        const { x, y } = getCoords(d);
-                        const isExt = d.is_extinguished || d.flame_radius_mm === 0;
-
-                        return (
-                          <g key={d.metric_id}>
-                            {isExt ? (
-                              <>
-                                <circle cx={x} cy={y} r="10" fill="#f43f5e" opacity="0.3" className="animate-ping" />
-                                <circle cx={x} cy={y} r="5.5" fill="#f43f5e" stroke="#ffffff" strokeWidth="2" />
-                              </>
-                            ) : (
-                              <circle
-                                cx={x}
-                                cy={y}
-                                r={hoveredPoint?.metric_id === d.metric_id ? 6 : 4.5}
-                                fill="#38bdf8"
-                                stroke="#0f172a"
-                                strokeWidth="2"
-                                className="cursor-pointer transition-transform hover:scale-150"
-                                onMouseEnter={() => setHoveredPoint(d)}
-                                onMouseLeave={() => setHoveredPoint(null)}
-                              />
-                            )}
-
-                            {/* Label atop point */}
-                            <text
-                              x={x}
-                              y={y - 8}
-                              textAnchor="middle"
-                              fill={isExt ? '#f43f5e' : '#38bdf8'}
-                              fontSize="8.5"
-                              fontWeight="bold"
-                              fontFamily="monospace"
-                            >
-                              {d.flame_radius_mm.toFixed(2)}mm
-                            </text>
-                          </g>
-                        );
-                      })}
-                    </>
-                  );
-                })()}
-              </svg>
-            </div>
-
-            {/* Run 101 Behavior Summary */}
-            <div className="text-[11px] font-mono text-slate-300 bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
-              <span className="text-cyan-300 font-bold block mb-0.5">Run 101 Analysis:</span>
-              Ignites at 2.50mm (Bright Blue) and expands to peak 6.30mm (1.200s, Dim Blue spherical). As oxygen in the diffusion shell is exhausted, the flame abruptly quenches at <strong>t = 2.000s (0.00mm)</strong>.
-            </div>
-          </div>
-
-          {/* ------------------------------------------------------------------- */}
-          {/* GRAPH 2: RUN 102 (Luminous Sooty Yellow Expansion) */}
-          {/* ------------------------------------------------------------------- */}
-          <div className="p-4 rounded-2xl bg-slate-950/90 border border-amber-500/40 flex flex-col gap-3 shadow-xl relative overflow-hidden">
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-              <div className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded-full bg-amber-400 shadow-sm shadow-amber-400/50" />
-                <span className="font-bold font-mono text-sm text-amber-300">
-                  GRAPH 2: RUN 102
-                </span>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800">
-                  Sooty Expansion
-                </span>
-              </div>
-              <span className="text-[10px] font-mono text-slate-400">2 Points (0.100s – 0.400s)</span>
-            </div>
-
-            {/* Active Expansion Banner */}
-            <div className="p-2.5 rounded-xl bg-gradient-to-r from-emerald-950/70 via-slate-900 to-emerald-950/50 border border-emerald-500/50 text-xs font-mono flex items-center justify-between gap-2 shadow-inner">
-              <div className="flex items-center gap-2 text-emerald-200">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                <div>
-                  <span className="font-bold text-white block sm:inline mr-1">
-                    VIGOROUS ACTIVE BURNING:
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">
+                    {runA_Info.name}
                   </span>
-                  <span>Peak Radius = <strong className="text-amber-400 text-sm">7.80 mm</strong> @ 0.400s</span>
                 </div>
-              </div>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/30 text-emerald-200 border border-emerald-500/60">
-                NOT EXTINGUISHED
-              </span>
-            </div>
-
-            {/* SVG Plot for RUN 102 */}
-            <div className="relative w-full h-48 bg-slate-900/60 rounded-xl border border-slate-800 p-2 overflow-hidden">
-              <svg className="w-full h-full overflow-visible" viewBox="0 0 360 130">
-                {/* Horizontal grid lines & Y labels */}
-                <line x1="35" y1="20" x2="350" y2="20" stroke="#334155" strokeDasharray="2 2" strokeWidth="0.5" />
-                <text x="5" y="23" fill="#64748b" fontSize="9" fontFamily="monospace">8.0mm</text>
-
-                <line x1="35" y1="58" x2="350" y2="58" stroke="#334155" strokeDasharray="2 2" strokeWidth="0.5" />
-                <text x="5" y="61" fill="#64748b" fontSize="9" fontFamily="monospace">4.0mm</text>
-
-                <line x1="35" y1="100" x2="350" y2="100" stroke="#475569" strokeWidth="1" />
-                <text x="5" y="103" fill="#64748b" fontSize="9" fontFamily="monospace">0.0mm</text>
-
-                {/* X-axis labels */}
-                <text x="80" y="120" fill="#94a3b8" fontSize="9" fontFamily="monospace">0.100s</text>
-                <text x="180" y="120" fill="#64748b" fontSize="9" fontFamily="monospace">0.250s</text>
-                <text x="275" y="120" fill="#fbbf24" fontSize="9" fontWeight="bold" fontFamily="monospace">0.400s (PEAK)</text>
-
-                {(() => {
-                  if (run102Data.length === 0) return null;
-                  const getCoords = (d: FlameMeasurement) => {
-                    const x = 50 + (d.timestamp_sec / 0.45) * 260;
-                    const y = 100 - (d.flame_radius_mm / 9.0) * 85;
-                    return { x, y };
-                  };
-
-                  const coords = run102Data.map(getCoords);
-                  const polylinePoints = coords.map((c) => `${c.x},${c.y}`).join(' ');
-
-                  return (
-                    <>
-                      {/* Gradient Area Fill under Curve */}
-                      <polygon
-                        points={`50,100 ${polylinePoints} 281,100`}
-                        fill="url(#run102AreaGrad)"
-                        opacity="0.25"
-                      />
-                      <defs>
-                        <linearGradient id="run102AreaGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#fbbf24" />
-                          <stop offset="100%" stopColor="#fbbf24" stopOpacity="0" />
-                        </linearGradient>
-                      </defs>
-
-                      {/* Trajectory Line */}
-                      <polyline
-                        fill="none"
-                        stroke="#fbbf24"
-                        strokeWidth="2.5"
-                        strokeDasharray="4 2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        points={polylinePoints}
-                      />
-
-                      {/* Plotted Data Points */}
-                      {run102Data.map((d) => {
-                        const { x, y } = getCoords(d);
-
-                        return (
-                          <g key={d.metric_id}>
-                            <circle
-                              cx={x}
-                              cy={y}
-                              r={hoveredPoint?.metric_id === d.metric_id ? 6.5 : 5}
-                              fill="#fbbf24"
-                              stroke="#0f172a"
-                              strokeWidth="2"
-                              className="cursor-pointer transition-transform hover:scale-150"
-                              onMouseEnter={() => setHoveredPoint(d)}
-                              onMouseLeave={() => setHoveredPoint(null)}
-                            />
-
-                            {/* Label */}
-                            <text
-                              x={x}
-                              y={y - 8}
-                              textAnchor="middle"
-                              fill="#fbbf24"
-                              fontSize="8.5"
-                              fontWeight="bold"
-                              fontFamily="monospace"
-                            >
-                              {d.flame_radius_mm.toFixed(2)}mm ({d.flame_color})
-                            </text>
-                          </g>
-                        );
-                      })}
-                    </>
-                  );
-                })()}
-              </svg>
-            </div>
-
-            {/* Run 102 Behavior Summary */}
-            <div className="text-[11px] font-mono text-slate-300 bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
-              <span className="text-amber-300 font-bold block mb-0.5">Run 102 Analysis:</span>
-              Rapid thermal expansion from 3.10mm (Bright Yellow) to 7.80mm (Sooty Yellow) in 0.300 seconds (+15.67 mm/s velocity). Flame remains energetic with high soot luminosity.
-            </div>
-          </div>
-        </div>
-        ) : (
-          /* ------------------------------------------------------------------- */
-          /* COMPARATIVE DIRECT OVERLAY: RUN 101 VS RUN 102 SUPERIMPOSED */
-          /* ------------------------------------------------------------------- */
-          <div className="p-4 rounded-2xl bg-slate-950/90 border border-indigo-500/40 flex flex-col gap-3 shadow-xl relative overflow-hidden">
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-slate-800 pb-2 flex-wrap gap-2">
-              <div className="flex items-center gap-3">
-                <span className="font-bold font-mono text-sm text-indigo-300">
-                  COMPARATIVE OVERLAY PLOT: RUN 101 vs RUN 102
-                </span>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-800">
-                  Synchronized Timeline
+                <span className="text-[10px] font-mono text-slate-400">
+                  {runAData.length} Points
                 </span>
               </div>
-              <div className="flex items-center gap-3 text-[11px] font-mono">
-                <div className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-cyan-400" />
-                  <span className="text-cyan-300 font-bold">Run 101 (Microgravity Quench)</span>
+
+              {/* Flame Goes Out Banner for Run A */}
+              {runAExtinction ? (
+                <div className="p-2.5 rounded-xl bg-gradient-to-r from-rose-950/70 via-slate-900 to-rose-950/50 border border-rose-500/50 text-xs font-mono flex items-center justify-between gap-2 shadow-inner">
+                  <div className="flex items-center gap-2 text-rose-200">
+                    <XCircle className="w-4 h-4 text-rose-400 shrink-0 animate-pulse" />
+                    <div>
+                      <span className="font-bold text-white block sm:inline mr-1">
+                        RECORDED FLAME EXTINCTION:
+                      </span>
+                      <span>
+                        t = <strong className="text-rose-400 text-sm">{runAExtinction.timestamp_sec.toFixed(3)}s</strong> (0.00 mm)
+                      </span>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/30 text-rose-200 border border-rose-500/60 animate-pulse">
+                    GOES OUT
+                  </span>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
-                  <span className="text-amber-300 font-bold">Run 102 (Sooty Expansion)</span>
+              ) : (
+                <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-xs font-mono flex items-center justify-between">
+                  <span className="text-slate-300">Combustion Status:</span>
+                  <span className="text-emerald-400 font-bold flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Sustained Reaction Front
+                  </span>
                 </div>
-              </div>
-            </div>
+              )}
 
-            {/* Extinction Alert Banner */}
-            <div className="p-2.5 rounded-xl bg-gradient-to-r from-rose-950/70 via-slate-900 to-amber-950/50 border border-rose-500/50 text-xs font-mono flex items-center justify-between gap-2 shadow-inner">
-              <div className="flex items-center gap-2 text-rose-200">
-                <XCircle className="w-4 h-4 text-rose-400 shrink-0 animate-pulse" />
-                <div>
-                  <span className="font-bold text-white mr-1">RUN 101 EXTINCTION AT t = 2.000s:</span>
-                  <span>Flame radius collapses from 6.30mm peak to 0.00mm, while Run 102 continuously expands to 7.80mm.</span>
-                </div>
-              </div>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/30 text-rose-200 border border-rose-500/60">
-                RUN 101 EXTINCTION VERIFIED
-              </span>
-            </div>
+              {/* SVG Plot for RUN A */}
+              <div className="relative w-full h-48 bg-slate-900/60 rounded-xl border border-slate-800 p-2 overflow-hidden">
+                <svg className="w-full h-full overflow-visible" viewBox="0 0 360 130">
+                  {/* Grid Lines */}
+                  <line x1="35" y1="20" x2="350" y2="20" stroke="#334155" strokeDasharray="2 2" strokeWidth="0.5" />
+                  <text x="5" y="23" fill="#64748b" fontSize="9" fontFamily="monospace">
+                    {(maxRadiusA * 0.85).toFixed(1)}mm
+                  </text>
 
-            {/* Large Combined SVG Plot */}
-            <div className="relative w-full h-64 bg-slate-900/60 rounded-xl border border-slate-800 p-2 overflow-hidden">
-              <svg className="w-full h-full overflow-visible" viewBox="0 0 600 170">
-                {/* Horizontal Grid & Y Axis */}
-                <line x1="45" y1="20" x2="580" y2="20" stroke="#334155" strokeDasharray="2 2" strokeWidth="0.5" />
-                <text x="5" y="23" fill="#64748b" fontSize="9" fontFamily="monospace">8.0mm</text>
+                  <line x1="35" y1="58" x2="350" y2="58" stroke="#334155" strokeDasharray="2 2" strokeWidth="0.5" />
+                  <text x="5" y="61" fill="#64748b" fontSize="9" fontFamily="monospace">
+                    {(maxRadiusA * 0.45).toFixed(1)}mm
+                  </text>
 
-                <line x1="45" y1="55" x2="580" y2="55" stroke="#334155" strokeDasharray="2 2" strokeWidth="0.5" />
-                <text x="5" y="58" fill="#64748b" fontSize="9" fontFamily="monospace">6.0mm</text>
+                  <line x1="35" y1="100" x2="350" y2="100" stroke="#475569" strokeWidth="1" />
+                  <text x="5" y="103" fill="#64748b" fontSize="9" fontFamily="monospace">0.0mm</text>
 
-                <line x1="45" y1="90" x2="580" y2="90" stroke="#334155" strokeDasharray="2 2" strokeWidth="0.5" />
-                <text x="5" y="93" fill="#64748b" fontSize="9" fontFamily="monospace">4.0mm</text>
+                  {/* Dynamic Curve */}
+                  {(() => {
+                    if (runAData.length === 0) return null;
+                    const getCoords = (d: FlameMeasurement) => {
+                      const x = 45 + (d.timestamp_sec / Math.max(0.1, maxTimeA)) * 285;
+                      const y = 100 - (d.flame_radius_mm / Math.max(0.1, maxRadiusA * 1.15)) * 85;
+                      return { x, y };
+                    };
 
-                <line x1="45" y1="125" x2="580" y2="125" stroke="#334155" strokeDasharray="2 2" strokeWidth="0.5" />
-                <text x="5" y="128" fill="#64748b" fontSize="9" fontFamily="monospace">2.0mm</text>
+                    const coords = runAData.map(getCoords);
+                    const polylinePoints = coords.map((c) => `${c.x},${c.y}`).join(' ');
 
-                <line x1="45" y1="145" x2="580" y2="145" stroke="#475569" strokeWidth="1.2" />
-                <text x="5" y="148" fill="#64748b" fontSize="9" fontFamily="monospace">0.0mm</text>
-
-                {/* X Axis Ticks */}
-                <text x="65" y="162" fill="#94a3b8" fontSize="9" fontFamily="monospace">0.100s</text>
-                <text x="140" y="162" fill="#94a3b8" fontSize="9" fontFamily="monospace">0.400s</text>
-                <text x="165" y="162" fill="#94a3b8" fontSize="9" fontFamily="monospace">0.500s</text>
-                <text x="330" y="162" fill="#94a3b8" fontSize="9" fontFamily="monospace">1.200s (Run 101 Peak)</text>
-                <text x="515" y="162" fill="#f43f5e" fontSize="9" fontWeight="bold" fontFamily="monospace">2.000s (Run 101 OUT)</text>
-
-                {/* Vertical Extinction Guideline at t = 2.000s */}
-                <line x1="535" y1="15" x2="535" y2="145" stroke="#f43f5e" strokeWidth="2" strokeDasharray="3 3" />
-
-                {/* Coordinate mapping helper */}
-                {(() => {
-                  const getOverlayCoords = (t: number, r: number) => {
-                    const x = 50 + (t / 2.1) * 510;
-                    const y = 145 - (r / 9.0) * 125;
-                    return { x, y };
-                  };
-
-                  const r101Coords = run101Data.map((d) => getOverlayCoords(d.timestamp_sec, d.flame_radius_mm));
-                  const r102Coords = run102Data.map((d) => getOverlayCoords(d.timestamp_sec, d.flame_radius_mm));
-
-                  return (
-                    <>
-                      {/* Area Fill for Run 101 */}
-                      {r101Coords.length > 0 && (
+                    return (
+                      <>
                         <polygon
-                          points={`50,145 ${r101Coords.map((c) => `${c.x},${c.y}`).join(' ')} 535,145`}
-                          fill="url(#overlayGrad101)"
-                          opacity="0.15"
+                          points={`45,100 ${polylinePoints} ${coords[coords.length - 1].x},100`}
+                          fill="url(#runAGrad)"
+                          opacity="0.25"
                         />
-                      )}
-                      {/* Area Fill for Run 102 */}
-                      {r102Coords.length > 0 && (
-                        <polygon
-                          points={`50,145 ${r102Coords.map((c) => `${c.x},${c.y}`).join(' ')} ${r102Coords[r102Coords.length - 1].x},145`}
-                          fill="url(#overlayGrad102)"
-                          opacity="0.2"
-                        />
-                      )}
-                      <defs>
-                        <linearGradient id="overlayGrad101" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#38bdf8" />
-                          <stop offset="100%" stopColor="#38bdf8" stopOpacity="0" />
-                        </linearGradient>
-                        <linearGradient id="overlayGrad102" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#fbbf24" />
-                          <stop offset="100%" stopColor="#fbbf24" stopOpacity="0" />
-                        </linearGradient>
-                      </defs>
-
-                      {/* Polyline for Run 101 */}
-                      {r101Coords.length > 0 && (
+                        <defs>
+                          <linearGradient id="runAGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#38bdf8" />
+                            <stop offset="100%" stopColor="#38bdf8" stopOpacity="0" />
+                          </linearGradient>
+                        </defs>
                         <polyline
                           fill="none"
                           stroke="#38bdf8"
                           strokeWidth="2.5"
                           strokeLinecap="round"
                           strokeLinejoin="round"
-                          points={r101Coords.map((c) => `${c.x},${c.y}`).join(' ')}
+                          points={polylinePoints}
                         />
-                      )}
 
-                      {/* Polyline for Run 102 */}
-                      {r102Coords.length > 0 && (
-                        <polyline
-                          fill="none"
-                          stroke="#fbbf24"
-                          strokeWidth="2.5"
-                          strokeDasharray="4 2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          points={r102Coords.map((c) => `${c.x},${c.y}`).join(' ')}
-                        />
-                      )}
-
-                      {/* Run 101 Points */}
-                      {run101Data.map((d) => {
-                        const { x, y } = getOverlayCoords(d.timestamp_sec, d.flame_radius_mm);
-                        const isExt = d.is_extinguished || d.flame_radius_mm === 0;
-
-                        return (
-                          <g key={`run101-${d.metric_id}`}>
-                            {isExt ? (
-                              <>
-                                <circle cx={x} cy={y} r="12" fill="#f43f5e" opacity="0.3" className="animate-ping" />
-                                <circle cx={x} cy={y} r="6" fill="#f43f5e" stroke="#ffffff" strokeWidth="2" />
-                                <text x={x} y={y - 12} textAnchor="middle" fill="#f43f5e" fontSize="9" fontWeight="bold" fontFamily="monospace">
-                                  RUN 101 OUT (0.00mm)
-                                </text>
-                              </>
-                            ) : (
-                              <>
+                        {runAData.map((d) => {
+                          const { x, y } = getCoords(d);
+                          const isExt = d.is_extinguished || d.flame_radius_mm === 0;
+                          return (
+                            <g key={d.metric_id}>
+                              {isExt ? (
+                                <>
+                                  <circle cx={x} cy={y} r="10" fill="#f43f5e" opacity="0.3" className="animate-ping" />
+                                  <circle cx={x} cy={y} r="5.5" fill="#f43f5e" stroke="#ffffff" strokeWidth="2" />
+                                </>
+                              ) : (
                                 <circle
                                   cx={x}
                                   cy={y}
-                                  r={hoveredPoint?.metric_id === d.metric_id ? 7 : 5}
+                                  r={4.5}
                                   fill="#38bdf8"
                                   stroke="#0f172a"
                                   strokeWidth="2"
-                                  className="cursor-pointer"
+                                  className="cursor-pointer hover:scale-150 transition-all"
                                   onMouseEnter={() => setHoveredPoint(d)}
                                   onMouseLeave={() => setHoveredPoint(null)}
                                 />
-                                <text x={x} y={y - 8} textAnchor="middle" fill="#38bdf8" fontSize="8.5" fontWeight="bold" fontFamily="monospace">
-                                  {d.flame_radius_mm.toFixed(2)}mm
-                                </text>
-                              </>
-                            )}
-                          </g>
+                              )}
+                              <text
+                                x={x}
+                                y={y - 8}
+                                textAnchor="middle"
+                                fill={isExt ? '#f43f5e' : '#38bdf8'}
+                                fontSize="8.5"
+                                fontWeight="bold"
+                                fontFamily="monospace"
+                              >
+                                {d.flame_radius_mm.toFixed(2)}mm
+                              </text>
+                            </g>
+                          );
+                        })}
+                      </>
+                    );
+                  })()}
+                </svg>
+              </div>
+
+              <div className="text-[11px] font-mono text-slate-300 bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
+                <span className="text-cyan-300 font-bold block mb-0.5">Run {runA_Id} Summary:</span>
+                {runA_Info.description}
+              </div>
+            </div>
+
+            {/* ----------------------------------------------------------------- */}
+            {/* GRAPH 2: RUN B */}
+            {/* ----------------------------------------------------------------- */}
+            <div className="p-4 rounded-2xl bg-slate-950/90 border border-amber-500/40 flex flex-col gap-3 shadow-xl relative overflow-hidden">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                <div className="flex items-center gap-2">
+                  <span className="w-3 h-3 rounded-full bg-amber-400 shadow-sm shadow-amber-400/50" />
+                  <span className="font-bold font-mono text-sm text-amber-300">
+                    GRAPH 2: RUN {runB_Id}
+                  </span>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800">
+                    {runB_Info.name}
+                  </span>
+                </div>
+                <span className="text-[10px] font-mono text-slate-400">
+                  {runBData.length} Points
+                </span>
+              </div>
+
+              {/* Flame Goes Out Banner for Run B */}
+              {runBExtinction ? (
+                <div className="p-2.5 rounded-xl bg-gradient-to-r from-rose-950/70 via-slate-900 to-rose-950/50 border border-rose-500/50 text-xs font-mono flex items-center justify-between gap-2 shadow-inner">
+                  <div className="flex items-center gap-2 text-rose-200">
+                    <XCircle className="w-4 h-4 text-rose-400 shrink-0 animate-pulse" />
+                    <div>
+                      <span className="font-bold text-white block sm:inline mr-1">
+                        RECORDED FLAME EXTINCTION:
+                      </span>
+                      <span>
+                        t = <strong className="text-rose-400 text-sm">{runBExtinction.timestamp_sec.toFixed(3)}s</strong> (0.00 mm)
+                      </span>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/30 text-rose-200 border border-rose-500/60 animate-pulse">
+                    GOES OUT
+                  </span>
+                </div>
+              ) : (
+                <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-xs font-mono flex items-center justify-between">
+                  <span className="text-slate-300">Combustion Status:</span>
+                  <span className="text-amber-400 font-bold flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Active Luminous Propagation
+                  </span>
+                </div>
+              )}
+
+              {/* SVG Plot for RUN B */}
+              <div className="relative w-full h-48 bg-slate-900/60 rounded-xl border border-slate-800 p-2 overflow-hidden">
+                <svg className="w-full h-full overflow-visible" viewBox="0 0 360 130">
+                  <line x1="35" y1="20" x2="350" y2="20" stroke="#334155" strokeDasharray="2 2" strokeWidth="0.5" />
+                  <text x="5" y="23" fill="#64748b" fontSize="9" fontFamily="monospace">
+                    {(maxRadiusB * 0.85).toFixed(1)}mm
+                  </text>
+
+                  <line x1="35" y1="58" x2="350" y2="58" stroke="#334155" strokeDasharray="2 2" strokeWidth="0.5" />
+                  <text x="5" y="61" fill="#64748b" fontSize="9" fontFamily="monospace">
+                    {(maxRadiusB * 0.45).toFixed(1)}mm
+                  </text>
+
+                  <line x1="35" y1="100" x2="350" y2="100" stroke="#475569" strokeWidth="1" />
+                  <text x="5" y="103" fill="#64748b" fontSize="9" fontFamily="monospace">0.0mm</text>
+
+                  {/* Dynamic Curve */}
+                  {(() => {
+                    if (runBData.length === 0) return null;
+                    const getCoords = (d: FlameMeasurement) => {
+                      const x = 45 + (d.timestamp_sec / Math.max(0.1, maxTimeB)) * 285;
+                      const y = 100 - (d.flame_radius_mm / Math.max(0.1, maxRadiusB * 1.15)) * 85;
+                      return { x, y };
+                    };
+
+                    const coords = runBData.map(getCoords);
+                    const polylinePoints = coords.map((c) => `${c.x},${c.y}`).join(' ');
+
+                    return (
+                      <>
+                        <polygon
+                          points={`45,100 ${polylinePoints} ${coords[coords.length - 1].x},100`}
+                          fill="url(#runBGrad)"
+                          opacity="0.25"
+                        />
+                        <defs>
+                          <linearGradient id="runBGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#f59e0b" />
+                            <stop offset="100%" stopColor="#f59e0b" stopOpacity="0" />
+                          </linearGradient>
+                        </defs>
+                        <polyline
+                          fill="none"
+                          stroke="#f59e0b"
+                          strokeWidth="2.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          points={polylinePoints}
+                        />
+
+                        {runBData.map((d) => {
+                          const { x, y } = getCoords(d);
+                          const isExt = d.is_extinguished || d.flame_radius_mm === 0;
+                          return (
+                            <g key={d.metric_id}>
+                              {isExt ? (
+                                <>
+                                  <circle cx={x} cy={y} r="10" fill="#f43f5e" opacity="0.3" className="animate-ping" />
+                                  <circle cx={x} cy={y} r="5.5" fill="#f43f5e" stroke="#ffffff" strokeWidth="2" />
+                                </>
+                              ) : (
+                                <circle
+                                  cx={x}
+                                  cy={y}
+                                  r={4.5}
+                                  fill="#f59e0b"
+                                  stroke="#0f172a"
+                                  strokeWidth="2"
+                                  className="cursor-pointer hover:scale-150 transition-all"
+                                  onMouseEnter={() => setHoveredPoint(d)}
+                                  onMouseLeave={() => setHoveredPoint(null)}
+                                />
+                              )}
+                              <text
+                                x={x}
+                                y={y - 8}
+                                textAnchor="middle"
+                                fill={isExt ? '#f43f5e' : '#f59e0b'}
+                                fontSize="8.5"
+                                fontWeight="bold"
+                                fontFamily="monospace"
+                              >
+                                {d.flame_radius_mm.toFixed(2)}mm
+                              </text>
+                            </g>
+                          );
+                        })}
+                      </>
+                    );
+                  })()}
+                </svg>
+              </div>
+
+              <div className="text-[11px] font-mono text-slate-300 bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
+                <span className="text-amber-300 font-bold block mb-0.5">Run {runB_Id} Summary:</span>
+                {runB_Info.description}
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* OVERLAY COMPARISON MODE */
+          <div className="p-4 rounded-2xl bg-slate-950/90 border border-indigo-500/40 flex flex-col gap-3 shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+              <span className="font-bold font-mono text-sm text-indigo-300">
+                OVERLAY COMPARISON: RUN {runA_Id} vs RUN {runB_Id}
+              </span>
+              <div className="flex items-center gap-3 text-xs font-mono">
+                <span className="text-cyan-400">● Run {runA_Id}</span>
+                <span className="text-amber-400">● Run {runB_Id}</span>
+              </div>
+            </div>
+
+            <div className="relative w-full h-56 bg-slate-900/60 rounded-xl border border-slate-800 p-2 overflow-hidden">
+              <svg className="w-full h-full overflow-visible" viewBox="0 0 460 140">
+                <line x1="35" y1="20" x2="450" y2="20" stroke="#334155" strokeDasharray="2 2" strokeWidth="0.5" />
+                <line x1="35" y1="60" x2="450" y2="60" stroke="#334155" strokeDasharray="2 2" strokeWidth="0.5" />
+                <line x1="35" y1="110" x2="450" y2="110" stroke="#475569" strokeWidth="1" />
+
+                {(() => {
+                  const maxTime = Math.max(maxTimeA, maxTimeB);
+                  const maxRad = Math.max(maxRadiusA, maxRadiusB) * 1.15;
+
+                  const getCoords = (d: FlameMeasurement) => ({
+                    x: 45 + (d.timestamp_sec / maxTime) * 390,
+                    y: 110 - (d.flame_radius_mm / maxRad) * 90,
+                  });
+
+                  const coordsA = runAData.map(getCoords);
+                  const coordsB = runBData.map(getCoords);
+
+                  return (
+                    <>
+                      {coordsA.length > 0 && (
+                        <polyline
+                          fill="none"
+                          stroke="#38bdf8"
+                          strokeWidth="2.5"
+                          points={coordsA.map((c) => `${c.x},${c.y}`).join(' ')}
+                        />
+                      )}
+                      {coordsB.length > 0 && (
+                        <polyline
+                          fill="none"
+                          stroke="#f59e0b"
+                          strokeWidth="2.5"
+                          points={coordsB.map((c) => `${c.x},${c.y}`).join(' ')}
+                        />
+                      )}
+                      {runAData.map((d) => {
+                        const { x, y } = getCoords(d);
+                        return (
+                          <circle
+                            key={d.metric_id}
+                            cx={x}
+                            cy={y}
+                            r={d.is_extinguished ? 5.5 : 4}
+                            fill={d.is_extinguished ? '#f43f5e' : '#38bdf8'}
+                          />
                         );
                       })}
-
-                      {/* Run 102 Points */}
-                      {run102Data.map((d) => {
-                        const { x, y } = getOverlayCoords(d.timestamp_sec, d.flame_radius_mm);
-
+                      {runBData.map((d) => {
+                        const { x, y } = getCoords(d);
                         return (
-                          <g key={`run102-${d.metric_id}`}>
-                            <circle
-                              cx={x}
-                              cy={y}
-                              r={hoveredPoint?.metric_id === d.metric_id ? 7 : 5}
-                              fill="#fbbf24"
-                              stroke="#0f172a"
-                              strokeWidth="2"
-                              className="cursor-pointer"
-                              onMouseEnter={() => setHoveredPoint(d)}
-                              onMouseLeave={() => setHoveredPoint(null)}
-                            />
-                            <text x={x} y={y - 8} textAnchor="middle" fill="#fbbf24" fontSize="8.5" fontWeight="bold" fontFamily="monospace">
-                              {d.flame_radius_mm.toFixed(2)}mm (R102)
-                            </text>
-                          </g>
+                          <circle
+                            key={d.metric_id}
+                            cx={x}
+                            cy={y}
+                            r={d.is_extinguished ? 5.5 : 4}
+                            fill={d.is_extinguished ? '#f43f5e' : '#f59e0b'}
+                          />
                         );
                       })}
                     </>
@@ -865,59 +853,8 @@ export const FlameExperimentDatasetView: React.FC<FlameExperimentDatasetViewProp
                 })()}
               </svg>
             </div>
-
-            {/* Telemetry Takeaway */}
-            <div className="text-[11px] font-mono text-slate-300 bg-slate-900/60 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between gap-3 flex-wrap">
-              <div>
-                <strong className="text-indigo-300">Observation:</strong> Run 102 exhibits rapid soot growth (+15.67 mm/s), while Run 101 forms a quiescent microgravity blue shell that quenches as soon as boundary layer O₂ is depleted at <strong className="text-rose-400">t = 2.000s</strong>.
-              </div>
-            </div>
           </div>
         )}
-
-        {/* Side-by-Side Comparative Summary Card */}
-        <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 flex flex-col gap-2.5 shadow-lg">
-          <div className="flex items-center justify-between text-xs font-mono font-bold text-slate-200 uppercase">
-            <span className="flex items-center gap-1.5">
-              <Layers className="w-3.5 h-3.5 text-cyan-400" />
-              Side-by-Side Run Comparison & Extinction Telemetry
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 text-xs font-mono">
-            <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 flex flex-col justify-between">
-              <span className="text-slate-400 text-[10px]">Peak Radius</span>
-              <div className="flex flex-col mt-1 gap-1">
-                <span className="text-cyan-400 font-bold">Run 101: 6.30 mm</span>
-                <span className="text-amber-400 font-bold">Run 102: 7.80 mm</span>
-              </div>
-            </div>
-
-            <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 flex flex-col justify-between">
-              <span className="text-slate-400 text-[10px]">Appearance & Chemistry</span>
-              <div className="flex flex-col mt-1 gap-1">
-                <span className="text-cyan-300 text-[11px]">Run 101: Dim Blue spherical</span>
-                <span className="text-amber-300 text-[11px]">Run 102: Sooty Yellow</span>
-              </div>
-            </div>
-
-            <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 flex flex-col justify-between">
-              <span className="text-slate-400 text-[10px]">Radial Expansion Rate</span>
-              <div className="flex flex-col mt-1 gap-1">
-                <span className="text-cyan-400 font-bold">Run 101: +3.45 mm/s</span>
-                <span className="text-amber-400 font-bold">Run 102: +15.67 mm/s</span>
-              </div>
-            </div>
-
-            <div className="p-2.5 rounded-xl bg-slate-900/80 border border-rose-500/40 flex flex-col justify-between">
-              <span className="text-slate-400 text-[10px]">Recorded Extinction</span>
-              <div className="flex flex-col mt-1 gap-1">
-                <span className="text-rose-400 font-bold">Run 101: YES @ 2.000s</span>
-                <span className="text-emerald-400 font-bold">Run 102: NO (Active)</span>
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* ========================================================================= */}
@@ -932,8 +869,10 @@ export const FlameExperimentDatasetView: React.FC<FlameExperimentDatasetViewProp
         onO2Change={onGasChange ? (newVal) => onGasChange('O2', newVal) : undefined}
       />
 
-      {/* Dataset Filter & Action Controls */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
+      {/* ========================================================================= */}
+      {/* CSV EXPERIMENT DATASET TABLE */}
+      {/* ========================================================================= */}
+      <div className="flex items-center justify-between gap-3 flex-wrap pt-2">
         <div className="flex items-center gap-1.5 flex-wrap">
           <span className="text-[11px] font-mono text-slate-400 mr-1 flex items-center gap-1">
             <Layers className="w-3 h-3 text-cyan-400" /> Filter Measurements:
@@ -956,7 +895,7 @@ export const FlameExperimentDatasetView: React.FC<FlameExperimentDatasetViewProp
                 onClick={() => setSelectedRunFilter(runId)}
                 className={`px-2.5 py-1 rounded-lg text-xs font-mono transition-all border ${
                   selectedRunFilter === runId
-                    ? 'bg-cyan-500 text-slate-950 font-bold border-cyan-400 shadow-sm'
+                    ? 'bg-indigo-500 text-white font-bold border-indigo-400 shadow-sm'
                     : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
                 }`}
               >
@@ -968,132 +907,110 @@ export const FlameExperimentDatasetView: React.FC<FlameExperimentDatasetViewProp
 
         <div className="flex items-center gap-2">
           <button
-            onClick={handleDownloadCsv}
-            className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 text-xs font-mono transition-all flex items-center gap-1.5 active:scale-95"
-            title="Download CSV"
+            onClick={() => setIsImporting(true)}
+            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-mono transition-all border border-slate-700 flex items-center gap-1.5"
+            title="Import custom CSV"
           >
-            <Download className="w-3 h-3 text-cyan-400" />
-            Export CSV
+            <Upload className="w-3.5 h-3.5" />
+            <span>Upload CSV</span>
           </button>
           <button
-            onClick={() => setIsImporting(true)}
-            className="px-2.5 py-1 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-200 border border-cyan-500/40 text-xs font-mono transition-all flex items-center gap-1.5 active:scale-95"
+            onClick={handleDownloadCsv}
+            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-mono transition-all border border-slate-700 flex items-center gap-1.5"
+            title="Export to CSV file"
           >
-            <Upload className="w-3 h-3 text-cyan-300" />
-            Upload CSV
+            <Download className="w-3.5 h-3.5" />
+            <span>Export CSV</span>
+          </button>
+          <button
+            onClick={handleResetSample}
+            className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white border border-slate-700 transition-all"
+            title="Reset to 6-row sample"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
 
-      {/* Main Measurements Table adhering exactly to requested schema */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-950/80 overflow-hidden shadow-xl">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs font-mono">
-            <thead>
-              <tr className="bg-slate-900/90 border-b border-slate-800 text-slate-300 text-[11px] uppercase tracking-wider">
-                <th className="py-2.5 px-3">metric_id</th>
-                <th className="py-2.5 px-3">run_id</th>
-                <th className="py-2.5 px-3">timestamp_sec</th>
-                <th className="py-2.5 px-3">flame_radius_mm</th>
-                <th className="py-2.5 px-3">flame_color</th>
-                <th className="py-2.5 px-3">is_extinguished</th>
-                <th className="py-2.5 px-3 text-right">Chamber Replay</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/60">
-              {filteredData.map((row) => {
-                const colorStyle = getFlameColorStyle(row.flame_color);
-
-                return (
-                  <tr
-                    key={row.metric_id}
-                    className="hover:bg-slate-900/60 transition-colors group"
-                  >
-                    {/* metric_id */}
-                    <td className="py-2.5 px-3 font-bold text-slate-300">
-                      <span className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300">
-                        #{row.metric_id}
-                      </span>
-                    </td>
-
-                    {/* run_id */}
-                    <td className="py-2.5 px-3 font-semibold text-indigo-300">
+      {/* The CSV Table */}
+      <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/80 shadow-inner">
+        <table className="w-full text-left text-xs font-mono border-collapse">
+          <thead>
+            <tr className="border-b border-slate-800 bg-slate-900/90 text-slate-400 text-[11px] uppercase tracking-wider">
+              <th className="py-2.5 px-3">metric_id</th>
+              <th className="py-2.5 px-3">run_id</th>
+              <th className="py-2.5 px-3">timestamp_sec</th>
+              <th className="py-2.5 px-3">flame_radius_mm</th>
+              <th className="py-2.5 px-3">flame_color</th>
+              <th className="py-2.5 px-3">is_extinguished</th>
+              <th className="py-2.5 px-3 text-right">Action</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-800/60">
+            {filteredData.map((row) => {
+              const colorStyle = getFlameColorStyle(row.flame_color);
+              return (
+                <tr
+                  key={row.metric_id}
+                  className={`hover:bg-slate-900/80 transition-colors ${
+                    row.is_extinguished ? 'bg-rose-950/15' : ''
+                  }`}
+                >
+                  <td className="py-2.5 px-3 text-slate-400">#{row.metric_id}</td>
+                  <td className="py-2.5 px-3">
+                    <span
+                      className={`px-2 py-0.5 rounded-md font-bold text-[11px] ${
+                        String(row.run_id) === runA_Id
+                          ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+                          : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                      }`}
+                    >
                       Run {row.run_id}
-                    </td>
-
-                    {/* timestamp_sec */}
-                    <td className="py-2.5 px-3 text-slate-300">
-                      <span className="flex items-center gap-1">
-                        <Clock className="w-3 h-3 text-slate-500" />
-                        {row.timestamp_sec.toFixed(3)} s
+                    </span>
+                  </td>
+                  <td className="py-2.5 px-3 text-white">
+                    {row.timestamp_sec.toFixed(3)}s
+                  </td>
+                  <td className="py-2.5 px-3">
+                    <span className={`font-bold ${row.flame_radius_mm === 0 ? 'text-slate-500' : 'text-cyan-300'}`}>
+                      {row.flame_radius_mm.toFixed(2)} mm
+                    </span>
+                  </td>
+                  <td className="py-2.5 px-3">
+                    <span className={`px-2 py-0.5 rounded-md text-[11px] border ${colorStyle.bg} ${colorStyle.text} ${colorStyle.border}`}>
+                      {row.flame_color}
+                    </span>
+                  </td>
+                  <td className="py-2.5 px-3">
+                    {row.is_extinguished ? (
+                      <span className="px-2 py-0.5 rounded-md bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] font-bold flex items-center gap-1 w-fit">
+                        <XCircle className="w-3 h-3 text-rose-400" />
+                        TRUE (Extinguished)
                       </span>
-                    </td>
-
-                    {/* flame_radius_mm */}
-                    <td className="py-2.5 px-3">
-                      <div className="flex items-center gap-2">
-                        <span className={`font-bold ${row.flame_radius_mm === 0 ? 'text-slate-500' : 'text-cyan-300'}`}>
-                          {row.flame_radius_mm.toFixed(2)} mm
-                        </span>
-                        {/* Mini bar indicator */}
-                        {maxRadius > 0 && row.flame_radius_mm > 0 && (
-                          <div className="w-14 h-1.5 bg-slate-800 rounded-full overflow-hidden hidden sm:block">
-                            <div
-                              className="h-full bg-cyan-400 rounded-full"
-                              style={{ width: `${(row.flame_radius_mm / maxRadius) * 100}%` }}
-                            />
-                          </div>
-                        )}
-                      </div>
-                    </td>
-
-                    {/* flame_color */}
-                    <td className="py-2.5 px-3">
-                      <div className="flex items-center gap-1.5">
-                        <span
-                          className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm"
-                          style={{ backgroundColor: colorStyle.dotColor }}
-                        />
-                        <span className={`px-2 py-0.5 rounded-md text-[11px] border ${colorStyle.bg} ${colorStyle.text} ${colorStyle.border}`}>
-                          {row.flame_color}
-                        </span>
-                      </div>
-                    </td>
-
-                    {/* is_extinguished */}
-                    <td className="py-2.5 px-3">
-                      {row.is_extinguished ? (
-                        <span className="px-2 py-0.5 rounded-md bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] font-bold flex items-center gap-1 w-fit">
-                          <XCircle className="w-3 h-3 text-rose-400" />
-                          TRUE (Extinguished)
-                        </span>
-                      ) : (
-                        <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold flex items-center gap-1 w-fit">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                          FALSE (Burning)
-                        </span>
-                      )}
-                    </td>
-
-                    {/* Chamber Replay Action */}
-                    <td className="py-2.5 px-3 text-right">
-                      {onApplyMeasurementToChamber && (
-                        <button
-                          onClick={() => onApplyMeasurementToChamber(row)}
-                          className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-cyan-500 hover:text-slate-950 text-slate-300 text-[11px] font-mono transition-all border border-slate-700 hover:border-cyan-400 flex items-center gap-1 ml-auto active:scale-95"
-                          title="Apply this exact flame radius & color to the live chamber"
-                        >
-                          <Flame className="w-3 h-3" />
-                          <span className="hidden sm:inline">Replay</span>
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold flex items-center gap-1 w-fit">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                        FALSE (Burning)
+                      </span>
+                    )}
+                  </td>
+                  <td className="py-2.5 px-3 text-right">
+                    {onApplyMeasurementToChamber && (
+                      <button
+                        onClick={() => onApplyMeasurementToChamber(row)}
+                        className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-cyan-500 hover:text-slate-950 text-slate-300 text-[11px] font-mono transition-all border border-slate-700 hover:border-cyan-400 flex items-center gap-1 ml-auto active:scale-95"
+                        title="Replay in live chamber"
+                      >
+                        <Flame className="w-3 h-3" />
+                        <span>Replay</span>
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   );
