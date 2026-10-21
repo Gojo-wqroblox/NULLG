@@ -1,0 +1,6 @@
+{
+  "name": "IgnisAstra: Spacecraft Fire Safety Super Intelligence",
+  "description": "Interactive space exploration fire safety dashboard, multi-gas microgravity flame simulator, layperson visual presentation, and AI risk ranking engine.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
