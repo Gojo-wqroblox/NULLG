@@ -12,6 +12,7 @@ import {
   Sliders,
   ChevronDown,
   ChevronUp,
+  Volume2,
 } from 'lucide-react';
 
 interface FlameResponseControlsProps {
@@ -24,6 +25,7 @@ interface FlameResponseControlsProps {
   isIgnited: boolean;
   onToggleIgnite?: () => void;
   isBeginnerMode?: boolean;
+  isAudioMode?: boolean;
 }
 
 export const FlameResponseControls: React.FC<FlameResponseControlsProps> = ({
@@ -36,6 +38,7 @@ export const FlameResponseControls: React.FC<FlameResponseControlsProps> = ({
   isIgnited,
   onToggleIgnite,
   isBeginnerMode = false,
+  isAudioMode = false,
 }) => {
   const o2 = gases['O2'] ?? 21;
   const co2 = gases['CO2'] ?? 0.4;
@@ -358,9 +361,20 @@ export const FlameResponseControls: React.FC<FlameResponseControlsProps> = ({
                 Airflow Speed
               </span>
             </div>
-            <span className="text-xs font-mono font-bold text-blue-300 bg-blue-950/80 px-2 py-0.5 rounded border border-blue-800">
-              {ventilationSpeed.toFixed(2)} m/s
-            </span>
+            <div className="flex items-center gap-1.5">
+              {isAudioMode && (
+                <span
+                  className="text-[10px] font-mono text-cyan-300 bg-cyan-950/80 px-1.5 py-0.5 rounded border border-cyan-800/80 flex items-center gap-1"
+                  title="Live Web Audio ventilation hum frequency"
+                >
+                  <Volume2 className="w-3 h-3 text-cyan-400 animate-pulse" />
+                  <span>{Math.round(45 + Math.min(ventilationSpeed, 1.5) * 195)} Hz hum</span>
+                </span>
+              )}
+              <span className="text-xs font-mono font-bold text-blue-300 bg-blue-950/80 px-2 py-0.5 rounded border border-blue-800">
+                {ventilationSpeed.toFixed(2)} m/s
+              </span>
+            </div>
           </div>
 
           <input

@@ -8,7 +8,10 @@ import {
 } from '../data/flameExperimentDataset';
 import { NASA_EXPERIMENTS, NasaExperiment } from '../data/nasaExperiments';
 import { FuelDefinition } from '../types';
+import { downloadSimulationReportCSV } from '../utils/simulationReportExport';
 import { OxygenTempScatterPlot } from './OxygenTempScatterPlot';
+import { NasaPsi159DatasetViewer } from './NasaPsi159DatasetViewer';
+import { AcmeDiagnosticsSection } from './AcmeDiagnosticsSection';
 import {
   Table,
   Upload,
@@ -29,6 +32,8 @@ import {
   Info,
   Rocket,
   Compass,
+  Cpu,
+  FileSpreadsheet,
 } from 'lucide-react';
 
 interface FlameExperimentDatasetViewProps {
@@ -47,6 +52,8 @@ interface FlameExperimentDatasetViewProps {
   flameTempK?: number;
   gravityG?: number;
   pressureKpa?: number;
+  ventilationSpeed?: number;
+  currentPresetId?: string;
   fuel?: FuelDefinition;
   isIgnited?: boolean;
   onGasChange?: (gasId: string, val: number) => void;
@@ -61,10 +68,14 @@ export const FlameExperimentDatasetView: React.FC<FlameExperimentDatasetViewProp
   flameTempK,
   gravityG = 0,
   pressureKpa = 101.3,
+  ventilationSpeed = 0.15,
+  currentPresetId = 'zero_g',
   fuel,
   isIgnited = true,
   onGasChange,
 }) => {
+  const [datasetViewMode, setDatasetViewMode] = useState<'programs' | 'psi159' | 'acme_hardware'>('programs');
+  const [activeDiagnosticMode, setActiveDiagnosticMode] = useState<string>('color');
   const [selectedExperimentId, setSelectedExperimentId] = useState<string>('sample_101_102');
   const [dataset, setDataset] = useState<FlameMeasurement[]>(INITIAL_SAMPLE_FLAME_DATASET);
   const [selectedRunFilter, setSelectedRunFilter] = useState<string>('all');
@@ -83,6 +94,27 @@ export const FlameExperimentDatasetView: React.FC<FlameExperimentDatasetViewProp
     );
   }, [selectedExperimentId]);
 
+  // Handler: Compile current simulation state, active gas composition, and flame temperature to formatted CSV report
+  const handleDownloadSimulationReport = () => {
+    downloadSimulationReportCSV({
+      gases: gases || { O2: 21, N2: 78, CO2: 0.4 },
+      flameTempK: flameTempK ?? 1650,
+      gravityG: gravityG ?? 0,
+      pressureKpa: pressureKpa ?? 101.3,
+      ventilationSpeed,
+      fuel,
+      isIgnited: isIgnited ?? true,
+      currentPresetId,
+      activeExperimentName: activeExp.name,
+      activeExperimentCode: activeExp.code,
+    });
+    setImportFeedback({
+      type: 'success',
+      message: 'Simulation report downloaded! Compiled live chamber state, active gas composition, and flame temperature to formatted CSV.',
+    });
+    setTimeout(() => setImportFeedback(null), 5000);
+  };
+
   // Check if currently on sample data
   const isSampleData =
     selectedExperimentId === 'sample_101_102' &&
@@ -92,6 +124,9 @@ export const FlameExperimentDatasetView: React.FC<FlameExperimentDatasetViewProp
   // Handle Switching NASA Experiment
   const handleSelectNasaExperiment = (expId: string) => {
     setSelectedExperimentId(expId);
+    if (expId.startsWith('psi159')) {
+      setDatasetViewMode('psi159');
+    }
     const exp = NASA_EXPERIMENTS.find((e) => e.id === expId);
     if (exp) {
       setDataset(exp.sampleRows);
@@ -187,15 +222,33 @@ export const FlameExperimentDatasetView: React.FC<FlameExperimentDatasetViewProp
   };
 
   const handleDownloadCsv = () => {
-    const csvContent = exportFlameDatasetToCSV(dataset);
+    if (filteredData.length === 0) {
+      setImportFeedback({
+        type: 'error',
+        message: 'No experimental data rows available to export with the current filter.',
+      });
+      return;
+    }
+
+    const csvContent = exportFlameDatasetToCSV(filteredData);
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const runSuffix = selectedRunFilter === 'all' ? 'all_runs' : `run_${selectedRunFilter}`;
+    const filename = `nasa_experiment_${selectedExperimentId}_${runSuffix}_${dateStr}.csv`;
     link.setAttribute('href', url);
-    link.setAttribute('download', `nasa_experiment_${selectedExperimentId}_${Date.now()}.csv`);
+    link.setAttribute('download', filename);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    setImportFeedback({
+      type: 'success',
+      message: `Downloaded CSV: Exported ${filteredData.length} experimental table records to "${filename}" for offline analysis.`,
+    });
+    setTimeout(() => setImportFeedback(null), 5000);
   };
 
   const handleResetSample = () => {
@@ -212,16 +265,83 @@ export const FlameExperimentDatasetView: React.FC<FlameExperimentDatasetViewProp
   return (
     <div className={`flex flex-col gap-4 text-slate-100 ${isEmbedded ? '' : 'p-4 sm:p-6 max-w-5xl mx-auto w-full'}`}>
       {/* ========================================================================= */}
-      {/* NASA EXPERIMENT SELECTION BAR */}
+      {/* 3-WAY DATASET & NASA SUITE SWITCHER */}
       {/* ========================================================================= */}
-      <div className="flex flex-col gap-2 bg-slate-950/95 border border-slate-800 p-3.5 rounded-2xl shadow-xl">
-        <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-slate-800">
-          <div className="flex items-center gap-2">
-            <Rocket className="w-4 h-4 text-cyan-400" />
-            <span className="text-xs font-mono font-bold text-white uppercase tracking-wider">
-              Select NASA Experiment Dataset
-            </span>
-          </div>
+      <div className="flex items-center justify-between flex-wrap gap-2 p-1.5 rounded-2xl bg-slate-950/95 border border-slate-800 shadow-md font-mono">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <button
+            onClick={() => setDatasetViewMode('programs')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border active:scale-95 ${
+              datasetViewMode === 'programs'
+                ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-md shadow-cyan-500/20'
+                : 'bg-slate-900 text-slate-300 border-slate-800 hover:text-white'
+            }`}
+          >
+            <Rocket className="w-3.5 h-3.5" />
+            <span>NASA Experiments & Radius Runs</span>
+          </button>
+
+          <button
+            onClick={() => setDatasetViewMode('psi159')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border active:scale-95 ${
+              datasetViewMode === 'psi159'
+                ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-md shadow-cyan-500/20'
+                : 'bg-slate-900 text-slate-300 border-slate-800 hover:text-white'
+            }`}
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            <span>NASA PSI-159 Flight Tables (179 Normal & 154 Inverse CSVs)</span>
+          </button>
+
+          <button
+            onClick={() => setDatasetViewMode('acme_hardware')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border active:scale-95 ${
+              datasetViewMode === 'acme_hardware'
+                ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-md shadow-cyan-500/20'
+                : 'bg-slate-900 text-slate-300 border-slate-800 hover:text-white'
+            }`}
+          >
+            <Cpu className="w-3.5 h-3.5" />
+            <span>ACME CIR Hardware & Optics Diagnostics</span>
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] text-slate-400 px-2 hidden xl:block">
+            NASA ISS Open Science Data Repository
+          </span>
+          <button
+            onClick={handleDownloadCsv}
+            className="px-3.5 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-mono font-bold text-xs transition-all shadow-md shadow-cyan-500/20 flex items-center gap-1.5 active:scale-95"
+            title="Download current experimental data table as CSV for offline analysis"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Download CSV</span>
+          </button>
+          <button
+            onClick={handleDownloadSimulationReport}
+            className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-mono font-bold text-xs transition-all shadow-md shadow-emerald-500/20 flex items-center gap-1.5 active:scale-95"
+            title="Download formatted CSV report compiling current simulation state, active gas composition, and flame temperature"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Download Report</span>
+          </button>
+        </div>
+      </div>
+
+      {datasetViewMode === 'programs' && (
+        <>
+          {/* ========================================================================= */}
+          {/* NASA EXPERIMENT SELECTION BAR */}
+          {/* ========================================================================= */}
+          <div className="flex flex-col gap-2 bg-slate-950/95 border border-slate-800 p-3.5 rounded-2xl shadow-xl">
+            <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <Rocket className="w-4 h-4 text-cyan-400" />
+                <span className="text-xs font-mono font-bold text-white uppercase tracking-wider">
+                  Select NASA Experiment Dataset
+                </span>
+              </div>
           <span className="text-[10px] font-mono text-slate-400">
             ISS CIR, Cygnus & Glovebox empirical microgravity datasets
           </span>
@@ -905,7 +1025,23 @@ export const FlameExperimentDatasetView: React.FC<FlameExperimentDatasetViewProp
           })}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={handleDownloadCsv}
+            className="px-3 py-1 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-mono font-bold transition-all border border-cyan-400 flex items-center gap-1.5 shadow-sm shadow-cyan-500/20 active:scale-95"
+            title="Download current experimental data table as CSV for offline analysis"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Download CSV</span>
+          </button>
+          <button
+            onClick={handleDownloadSimulationReport}
+            className="px-3 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-mono font-bold transition-all border border-emerald-400 flex items-center gap-1.5 shadow-sm active:scale-95"
+            title="Download formatted CSV report compiling current simulation state, active gas composition, and flame temperature"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Download Report</span>
+          </button>
           <button
             onClick={() => setIsImporting(true)}
             className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-mono transition-all border border-slate-700 flex items-center gap-1.5"
@@ -913,14 +1049,6 @@ export const FlameExperimentDatasetView: React.FC<FlameExperimentDatasetViewProp
           >
             <Upload className="w-3.5 h-3.5" />
             <span>Upload CSV</span>
-          </button>
-          <button
-            onClick={handleDownloadCsv}
-            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-mono transition-all border border-slate-700 flex items-center gap-1.5"
-            title="Export to CSV file"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>Export CSV</span>
           </button>
           <button
             onClick={handleResetSample}
@@ -1012,6 +1140,22 @@ export const FlameExperimentDatasetView: React.FC<FlameExperimentDatasetViewProp
           </tbody>
         </table>
       </div>
+      </>
+    )}
+
+      {datasetViewMode === 'psi159' && (
+        <NasaPsi159DatasetViewer
+          onApplyConditionsToChamber={onApplyExperimentConditions}
+          onDownloadSimulationReport={handleDownloadSimulationReport}
+        />
+      )}
+
+      {datasetViewMode === 'acme_hardware' && (
+        <AcmeDiagnosticsSection
+          activeDiagnosticMode={activeDiagnosticMode}
+          onSelectDiagnosticMode={setActiveDiagnosticMode}
+        />
+      )}
     </div>
   );
 };

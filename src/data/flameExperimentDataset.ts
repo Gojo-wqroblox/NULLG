@@ -232,9 +232,10 @@ export function parseFlameDatasetCSV(csvText: string): {
 export function exportFlameDatasetToCSV(data: FlameMeasurement[]): string {
   const header = 'metric_id,run_id,timestamp_sec,flame_radius_mm,flame_color,is_extinguished\n';
   const rows = data.map((d) => {
-    return `${d.metric_id},${d.run_id},${d.timestamp_sec.toFixed(3)},${d.flame_radius_mm.toFixed(
-      2
-    )},"${d.flame_color}",${d.is_extinguished ? 'TRUE' : 'FALSE'}`;
+    const escapedColor = String(d.flame_color ?? '').replace(/"/g, '""');
+    const timeVal = typeof d.timestamp_sec === 'number' ? d.timestamp_sec.toFixed(3) : d.timestamp_sec;
+    const radVal = typeof d.flame_radius_mm === 'number' ? d.flame_radius_mm.toFixed(2) : d.flame_radius_mm;
+    return `${d.metric_id},${d.run_id},${timeVal},${radVal},"${escapedColor}",${d.is_extinguished ? 'TRUE' : 'FALSE'}`;
   });
   return header + rows.join('\n');
 }
