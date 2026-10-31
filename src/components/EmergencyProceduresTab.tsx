@@ -36,7 +36,9 @@ import {
   ArrowRight,
   ShieldAlert,
   Siren,
+  BookOpen,
 } from 'lucide-react';
+import { EmergencyInstructionsDashboard } from './EmergencyInstructionsDashboard';
 
 interface EmergencyProceduresTabProps {
   onSimulateInChamber: (conditions: {
@@ -79,6 +81,7 @@ export const EmergencyProceduresTab: React.FC<EmergencyProceduresTabProps> = ({
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [timeLeft, setTimeLeft] = useState<number>(currentScenario.timeLimitSec);
   const [timerRunning, setTimerRunning] = useState<boolean>(true);
+  const [isInstructionsDashboardOpen, setIsInstructionsDashboardOpen] = useState<boolean>(false);
 
   // Astronaut Career Stats
   const [stats, setStats] = useState({
@@ -363,6 +366,17 @@ export const EmergencyProceduresTab: React.FC<EmergencyProceduresTabProps> = ({
             <span>Random Scenario</span>
           </button>
 
+          {/* Instructions & Safety Dashboard Trigger Button */}
+          <button
+            onClick={() => setIsInstructionsDashboardOpen(true)}
+            className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-cyan-950 via-slate-900 to-indigo-950 hover:from-cyan-900 hover:to-indigo-900 border border-cyan-400/70 hover:border-cyan-300 text-cyan-200 hover:text-white text-xs font-mono font-bold transition-all shadow-lg shadow-cyan-500/20 active:scale-95 flex items-center gap-2 group ring-1 ring-cyan-500/30"
+            title="Open Astronaut Safety & Simulator Instructions Dashboard"
+          >
+            <BookOpen className="w-4 h-4 text-cyan-400 group-hover:scale-110 transition-transform" />
+            <span>Instructions &amp; Safety Dashboard</span>
+            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping shrink-0" />
+          </button>
+
           {/* Scenario Selector Dropdown */}
           <select
             value={currentScenario.id}
@@ -377,6 +391,15 @@ export const EmergencyProceduresTab: React.FC<EmergencyProceduresTabProps> = ({
           </select>
         </div>
       </div>
+
+      {/* Instructions & Safety Dashboard Modal */}
+      <EmergencyInstructionsDashboard
+        isOpen={isInstructionsDashboardOpen}
+        onClose={() => setIsInstructionsDashboardOpen(false)}
+        onSimulateInChamber={onSimulateInChamber}
+        onTestAudio={playKlaxonAlarm}
+        onTriggerRandomScenario={handleNewRandomScenario}
+      />
 
       {/* Main Grid: Scenario Telemetry (Left) + Interactive Procedure Console (Right) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
@@ -420,6 +443,18 @@ export const EmergencyProceduresTab: React.FC<EmergencyProceduresTabProps> = ({
             <div className="flex items-center justify-between text-xs font-mono text-slate-400">
               <span>Compartment Location:</span>
               <span className="font-semibold text-slate-200">{currentScenario.location}</span>
+            </div>
+
+            <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono">
+              <span className="text-slate-400">Unsure of proper protocol?</span>
+              <button
+                onClick={() => setIsInstructionsDashboardOpen(true)}
+                className="text-cyan-400 hover:text-cyan-300 font-bold flex items-center gap-1 transition-colors"
+                title="View full safety procedures and instructions dashboard"
+              >
+                <BookOpen className="w-3.5 h-3.5" />
+                <span>Open Instructions Dashboard</span>
+              </button>
             </div>
           </div>
 

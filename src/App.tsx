@@ -18,14 +18,17 @@ import { AiRiskAssessmentTab } from './components/AiRiskAssessmentTab';
 import { EmergencyProceduresTab } from './components/EmergencyProceduresTab';
 import { ShareSimulationModal } from './components/ShareSimulationModal';
 import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal';
+import { EmergencyInstructionsDashboard } from './components/EmergencyInstructionsDashboard';
 import { StartingScreen, AstronautProfile, DEMO_ASTRONAUTS } from './components/StartingScreen';
 import { FlameMeasurement } from './data/flameExperimentDataset';
 import { ventilationAudio } from './utils/ventilationAudio';
+import { playKlaxonAlarm } from './utils/emergencyAudio';
 import { Flame, Table, Activity, RotateCcw, Power, Share2, Keyboard } from 'lucide-react';
 
 export default function App() {
   // Application Entry Gate: NASA Space App Challenge starting screen
   const [isAppStarted, setIsAppStarted] = useState<boolean>(false);
+  const [isInstructionsDashboardOpen, setIsInstructionsDashboardOpen] = useState<boolean>(false);
   const [activeAstronaut, setActiveAstronaut] = useState<AstronautProfile>(() => {
     try {
       const saved = localStorage.getItem('nullg_active_astronaut');
@@ -190,6 +193,7 @@ export default function App() {
       } else if (e.key === 'Escape') {
         setIsShortcutsModalOpen(false);
         setIsShareModalOpen(false);
+        setIsInstructionsDashboardOpen(false);
       }
     };
 
@@ -348,6 +352,7 @@ export default function App() {
         onOpenShortcuts={() => setIsShortcutsModalOpen(true)}
         activeAstronaut={activeAstronaut}
         onLockTerminal={() => setIsAppStarted(false)}
+        onOpenInstructionsDashboard={() => setIsInstructionsDashboardOpen(true)}
       />
 
       {/* Main Single-Column Focused Workspace */}
@@ -767,6 +772,31 @@ export default function App() {
             setActiveTab('emergency');
             showShortcutNotification('View: Emergency Drill [5]');
           }
+        }}
+      />
+
+      {/* Flight Operations & Safety Instructions Dashboard Modal */}
+      <EmergencyInstructionsDashboard
+        isOpen={isInstructionsDashboardOpen}
+        onClose={() => setIsInstructionsDashboardOpen(false)}
+        onSimulateInChamber={(conditions) => {
+          setGravityG(conditions.gravityG);
+          setVentilationSpeed(conditions.ventilationSpeed);
+          setPressureKpa(conditions.pressureKpa);
+          setGases((prev) => ({
+            ...prev,
+            O2: conditions.o2Pct,
+            CO2: conditions.co2Pct,
+            N2: Math.max(0, 100 - conditions.o2Pct - conditions.co2Pct),
+          }));
+          setIsIgnited(true);
+          setActiveTab('flame');
+          showShortcutNotification(`Loaded ${conditions.gravityG}G chamber baseline settings`);
+        }}
+        onTestAudio={playKlaxonAlarm}
+        onTriggerRandomScenario={() => {
+          setActiveTab('emergency');
+          showShortcutNotification('Emergency Drill Scenario Activated');
         }}
       />
 

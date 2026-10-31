@@ -1,5 +1,5 @@
 import React from 'react';
-import { Flame, Table, Activity, ChevronDown, ShieldAlert, Siren, Share2, Volume2, VolumeX, Keyboard, UserCheck, LogOut, Shield } from 'lucide-react';
+import { Flame, Table, Activity, ChevronDown, ShieldAlert, Siren, Share2, Volume2, VolumeX, Keyboard, UserCheck, LogOut, Shield, BookOpen } from 'lucide-react';
 import { AstronautProfile } from './StartingScreen';
 
 export interface SimplePreset {
@@ -46,6 +46,7 @@ interface NavbarProps {
   onOpenShortcuts?: () => void;
   activeAstronaut?: AstronautProfile | null;
   onLockTerminal?: () => void;
+  onOpenInstructionsDashboard?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -60,6 +61,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenShortcuts,
   activeAstronaut,
   onLockTerminal,
+  onOpenInstructionsDashboard,
 }) => {
   return (
     <header className="sticky top-0 z-40 w-full border-b border-slate-800/80 bg-slate-950/90 backdrop-blur-xl">
@@ -137,6 +139,17 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <ShieldAlert className="w-3.5 h-3.5 text-amber-300" />
             <span>AI Risk Assessment</span>
+          </button>
+
+          {/* Button between AI Risk Assessment and Emergency Drill */}
+          <button
+            onClick={onOpenInstructionsDashboard}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all bg-gradient-to-r from-cyan-950/90 to-blue-950/90 hover:from-cyan-900/90 hover:to-blue-900/90 text-cyan-300 hover:text-white border border-cyan-500/60 hover:border-cyan-400 shadow-sm active:scale-95 group"
+            title="Open Astronaut Safety & Simulator Instructions Dashboard"
+          >
+            <BookOpen className="w-3.5 h-3.5 text-cyan-400 group-hover:scale-110 transition-transform" />
+            <span>Safety Guide</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse shrink-0" />
           </button>
 
           <button
