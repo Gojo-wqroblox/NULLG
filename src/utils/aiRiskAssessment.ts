@@ -204,23 +204,23 @@ export function evaluateChamberSafety(state: ChamberAtmosphereState): AiRiskAsse
       recommendations.push('De-energize all igniters and spark sources immediately.');
       recommendations.push('Vent chamber to vacuum or exhaust scrubber.');
     } else if (isExtremeOxygen) {
-      headline = 'CRITICAL HAZARD: Extreme Hyper-Oxidant Atmosphere (Apollo 1 Analogue)';
+      headline = 'CRITICAL HAZARD: Extreme Hyper-Oxidant Atmosphere (Apollo 1 / Apollo 13 Analogue)';
       justificationParagraphs.push(
         `Oxygen concentration is at an extreme ${o2.toFixed(1)}% with an oxidizer partial pressure of ${pO2.toFixed(1)} kPa. ` +
-        `At this elevated oxygen index, the limiting oxygen threshold for normally fire-resistant polymers, gaskets, and clothing is surpassed, causing virtually all organic materials to combust instantaneously.`
+        `As demonstrated in the Apollo 1 (1967) launch pad fire and Apollo 13 (1970) Cryo Tank No. 2 Teflon wire arc, hyper-oxidant atmospheres lower ignition thresholds even for fluoropolymer insulation and cause uncontrollable flashover.`
       );
       justificationParagraphs.push(
         `The combustion heat release rate increases exponentially with (pO₂)¹.⁵. High-temperature flame fronts (${flameTempK} K) will initiate rapid flashover across adjacent structural hardware without thermal standoff.`
       );
-      recommendations.push('Dilute chamber atmosphere immediately with Nitrogen (N₂) to bring O₂ below 21%.');
-      recommendations.push('Depressurize chamber if structural containment temperature rises.');
+      recommendations.push('Dilute chamber atmosphere immediately with Nitrogen (N₂) to bring O₂ below 21% (post-Apollo 60/40 pad doctrine).');
+      recommendations.push('De-energize internal tank/manifold wiring and replace exposed polymers with Beta cloth or PBI barrier textiles.');
     } else if (isLethalCO) {
-      headline = 'CRITICAL HAZARD: Lethal Toxic Plume (Carbon Monoxide Accumulation)';
+      headline = 'CRITICAL HAZARD: Lethal Toxic Plume & Mir 1997 Zero-G Smoke Persistence';
       justificationParagraphs.push(
-        `Carbon monoxide concentration has climbed to ${co.toFixed(2)}% (${(co * 10000).toFixed(0)} ppm). In a closed life support volume, CO concentrations above 500 ppm cause fatal carboxyhemoglobin saturation within minutes.`
+        `Carbon monoxide concentration has climbed to ${co.toFixed(2)}% (${(co * 10000).toFixed(0)} ppm). As experienced during the 1997 Mir Vika oxygen generator fire, combustion smoke and CO do not settle via buoyancy in 0-G and linger inside crew quarters for hours.`
       );
-      recommendations.push('Activate environmental control and life support system (ECLSS) catalytic oxidizers.');
-      recommendations.push('Isolate habitat volume from crew breathing compartments.');
+      recommendations.push('Don Portable Breathing Apparatus (PBA) masks and activate TCCS catalytic oxidizers.');
+      recommendations.push('Use Shuttle-derived sub-micron optical/ionization smoke discrimination to verify clean air before removing respirators.');
     } else {
       headline = 'CRITICAL HAZARD: Uncontrolled High-Energy Combustion Instability';
       justificationParagraphs.push(
@@ -279,7 +279,7 @@ export function evaluateChamberSafety(state: ChamberAtmosphereState): AiRiskAsse
       );
     } else if (isQuiescentStarvation) {
       justificationParagraphs.push(
-        `Microgravity conditions (0.0G) combined with near-zero convective ventilation (${ventilationSpeed.toFixed(2)} m/s) induce self-extinguishing diffusive choke. As discovered in NASA FLEX and ACME/CFM experiments, the accumulation of combustion products (CO₂ and H₂O) around the spherical reaction zone starves the flame of incoming O₂, driving it toward radiant extinction or cool flame cessation.`
+        `Microgravity conditions (0.0G) combined with near-zero convective ventilation (${ventilationSpeed.toFixed(2)} m/s) induce self-extinguishing diffusive choke. As featured in NASA ScienceCasts & FLEX/PSI-159 experiments, visible flames may extinguish into invisible, soot-free low-temperature "Cool Flames" (500–800 K) that continue consuming fuel vapor until oxygen is exhausted.`
       );
     } else if (isHighCO2Smother) {
       justificationParagraphs.push(

@@ -518,6 +518,127 @@ export const NASA_EMERGENCY_SCENARIOS: EmergencyScenario[] = [
     physicsInsight:
       'Droplet flames in 0-G depend purely on spherical oxygen diffusion. Inert gas injection (CO₂ or N₂) pushes the flame standoff distance until radiation losses induce radiative extinction.',
   },
+  {
+    id: 'apollo_1_pad34',
+    title: 'Historic Case Study — Apollo 1 (1967): Pad 34 Pure-O₂ Flashover',
+    moduleName: 'Apollo Command Module 012 (LC-34)',
+    location: 'Left Equipment Bay / Environmental Control Wiring Harness',
+    fireClass: 'Class A - Combustibles',
+    incidentSummary:
+      'Plugs-out launch rehearsal under 100% pure oxygen at 16.7 psi (115 kPa). A momentary electrical arc beneath the lithium hydroxide door ignited nylon netting, polyurethane foam, and Velcro fasteners across the cabin.',
+    urgency: 'EXTREME',
+    timeLimitSec: 25,
+    environment: {
+      gravityG: 1.0,
+      o2Pct: 100.0,
+      co2Pct: 0.0,
+      ventilationMps: 0.30,
+      pressureKpa: 115.0,
+      fuelName: 'Nylon Netting, Velcro & Polyurethane Foam (Pre-Beta Cloth)',
+    },
+    sensorData: {
+      obscurationPct: 45.0,
+      coPpm: 820,
+      tempC: 980,
+      thermalCamera: 'Instantaneous 100% O₂ flashover enveloping cabin walls in <4 seconds',
+      spectralPeak: 'Extreme 777 nm Atomic O₂ + intense hydrocarbon continuum',
+    },
+    correctContainmentIds: ['hatch_seal_vacuum', 'cut_vent_and_power'],
+    recommendedAgentId: 'n2_flood',
+    acceptableAgentIds: ['n2_flood', 'vacuum_dump'],
+    lethalAgentIds: [
+      {
+        agentId: 'water_mist',
+        reason: 'Catastrophic failure! At 16.7 psi in 100% pure O₂, localized water mist cannot arrest hyperbaric flashover across 70+ lbs of exposed cabin nylon while live DC arcs continue.',
+      },
+      {
+        agentId: 'he_quench',
+        reason: 'Ineffective! Helium thermal siphon cannot dilute a 100% pure oxygen atmosphere fast enough to halt rapid flame spread.',
+      },
+    ],
+    correctPostActionId: 'vacuum_dump_repress',
+    flightRuleRef: 'Apollo 204 Review Board Lessons Learned → 60/40 N₂-O₂ Pad Mix & Beta Cloth',
+    physicsInsight:
+      'Hyperbaric 100% O₂ (pO₂ = 115 kPa, >5× Earth air) eliminates nitrogen’s thermal heat sink, making nearly every polymer explosive. Apollo 1 forced NASA to adopt 60% O₂ / 40% N₂ on the pad, fireproof Beta cloth, and quick-release outward hatches.',
+  },
+  {
+    id: 'apollo_13_cryo_o2',
+    title: 'Historic Case Study — Apollo 13 (1970): Cryo O₂ Tank No. 2 Arc & Lifeboat',
+    moduleName: 'Apollo Service Module Bay 4 / Odyssey Cryo Manifold',
+    location: 'Supercritical Oxygen Tank No. 2 Stirrer Assembly',
+    fireClass: 'Class C - Electrical',
+    incidentSummary:
+      '55h 54m into lunar transit: Commanding cryo tank stir energized 65V-damaged Teflon wire insulation submerged in supercritical pure O₂. Internal combustion spiked tank pressure past burst disk limits, venting Bay 4.',
+    urgency: 'EXTREME',
+    timeLimitSec: 35,
+    environment: {
+      gravityG: 0.0,
+      o2Pct: 98.0,
+      co2Pct: 0.2,
+      ventilationMps: 0.25,
+      pressureKpa: 105.0,
+      fuelName: 'Damaged PTFE/Teflon Fan Wire Insulation in Pure O₂',
+    },
+    sensorData: {
+      obscurationPct: 8.5,
+      coPpm: 65,
+      tempC: 720,
+      thermalCamera: 'Rapid internal pressure/thermal excursion in Cryo O₂ Tank No. 2',
+      spectralPeak: 'Fluoropolymer pyrolysis (CF₂) + intense O₂ oxidation flash',
+    },
+    correctContainmentIds: ['cut_vent_and_power', 'hatch_seal_vacuum'],
+    recommendedAgentId: 'vacuum_dump',
+    acceptableAgentIds: ['vacuum_dump', 'n2_flood'],
+    lethalAgentIds: [
+      {
+        agentId: 'water_mist',
+        reason: 'Lethal hazard! Water cannot reach a sealed cryogenic oxygen pressure vessel and shorts adjacent fuel-cell DC power busses.',
+      },
+    ],
+    correctPostActionId: 'pba_tccs',
+    flightRuleRef: 'Cortright Commission Report → Isolated Tank 3 & LM Lifeboat LiOH Doctrine',
+    physicsInsight:
+      'Pure supercritical oxygen reacts violently even with fluoropolymer Teflon wire jackets when overheated by a fused 65V switch. Post-Apollo 13 redesigns banned Teflon and unshielded motors inside oxygen vessels and mandated isolated emergency lifeboat power/LiOH adapters.',
+  },
+  {
+    id: 'mir_1997_vika',
+    title: 'Historic Case Study — Mir Station (1997): Kvant-1 Vika O₂ Candle Fire',
+    moduleName: 'Mir Space Station (Kvant-1 Module)',
+    location: 'Elektron / Vika Solid-Fuel Oxygen Generator (SFOG) Bracket',
+    fireClass: 'Class D - Lithium Metal',
+    incidentSummary:
+      'A defective lithium perchlorate oxygen-generating canister ruptured upon activation during NASA-Mir joint operations, erupting into a 14-minute white-hot blowtorch flame and choking the entire station with opaque smoke.',
+    urgency: 'EXTREME',
+    timeLimitSec: 35,
+    environment: {
+      gravityG: 0.0,
+      o2Pct: 26.0,
+      co2Pct: 5.0,
+      ventilationMps: 0.40,
+      pressureKpa: 98.0,
+      fuelName: 'Lithium Perchlorate SFOG Canister & Adjacent Polymer Panels',
+    },
+    sensorData: {
+      obscurationPct: 68.0,
+      coPpm: 450,
+      tempC: 890,
+      thermalCamera: 'High-velocity self-oxidizing blowtorch jet spraying molten sparks across Kvant-1',
+      spectralPeak: '670 nm Lithium Perchlorate jet + dense carbon monoxide & particulate plume',
+    },
+    correctContainmentIds: ['cut_vent_and_power', 'cut_vent_only'],
+    recommendedAgentId: 'co2',
+    acceptableAgentIds: ['co2', 'n2_flood', 'fk5112'],
+    lethalAgentIds: [
+      {
+        agentId: 'water_mist',
+        reason: 'Hazardous! Direct water spray onto superheated lithium perchlorate slag induces violent thermal steam spattering and toxic splashback across the dark smoke-filled module.',
+      },
+    ],
+    correctPostActionId: 'pba_tccs',
+    flightRuleRef: 'NASA-Mir Phase 1 Lessons → ISS Dual Egress & Optical Smoke Discrimination',
+    physicsInsight:
+      'Solid perchlorate oxygen candles chemically release their own oxygen, meaning ordinary smothering only cools surrounding structures while the cartridge burns out. Mir 1997 directly drove ISS mandates for dual Soyuz/Crew escape access, immediate airflow shutdown, and 18+ hr respiratory PBA reserves.',
+  },
 ];
 
 /**

@@ -8,7 +8,6 @@ import { AVAILABLE_GASES, AVAILABLE_FUELS } from './data/gases';
 import { FuelDefinition } from './types';
 import { Navbar, SimplePreset, SIMPLE_PRESETS } from './components/Navbar';
 import { ChamberCanvas } from './components/ChamberCanvas';
-import { ThreeFlameChamber } from './components/ThreeFlameChamber';
 import { FlameResponseControls } from './components/FlameResponseControls';
 import { TenGasAtmospherePanel } from './components/TenGasAtmospherePanel';
 import { FlameTemperatureHistoryGraph } from './components/FlameTemperatureHistoryGraph';
@@ -19,11 +18,15 @@ import { EmergencyProceduresTab } from './components/EmergencyProceduresTab';
 import { ShareSimulationModal } from './components/ShareSimulationModal';
 import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal';
 import { EmergencyInstructionsDashboard } from './components/EmergencyInstructionsDashboard';
+import { MissionHistoryTab } from './components/MissionHistoryTab';
+import { QuickSetupPresetBar } from './components/QuickSetupPresetBar';
+import { SafetyDrillWidget } from './components/SafetyDrillWidget';
 import { StartingScreen, AstronautProfile, DEMO_ASTRONAUTS } from './components/StartingScreen';
 import { FlameMeasurement } from './data/flameExperimentDataset';
 import { ventilationAudio } from './utils/ventilationAudio';
+import { spaceStationAmbient } from './utils/spaceStationAmbientAudio';
 import { playKlaxonAlarm } from './utils/emergencyAudio';
-import { Flame, Table, Activity, RotateCcw, Power, Share2, Keyboard } from 'lucide-react';
+import { Flame, Keyboard, Volume2, VolumeX } from 'lucide-react';
 
 export default function App() {
   // Application Entry Gate: NASA Space App Challenge starting screen
@@ -38,8 +41,8 @@ export default function App() {
     }
   });
 
-  // Navigation: Simple 5 views
-  const [activeTab, setActiveTab] = useState<'flame' | 'dataset' | 'scatter' | 'risk' | 'emergency'>('flame');
+  // Navigation: 6 views
+  const [activeTab, setActiveTab] = useState<'flame' | 'dataset' | 'scatter' | 'risk' | 'emergency' | 'history'>('flame');
 
   // Core Simulation State with 10 Featured Gases
   const [gases, setGases] = useState<Record<string, number>>({
@@ -60,11 +63,34 @@ export default function App() {
   const [isIgnited, setIsIgnited] = useState<boolean>(true);
   const [selectedFuel, setSelectedFuel] = useState<FuelDefinition>(AVAILABLE_FUELS[0]);
   const [currentPresetId, setCurrentPresetId] = useState<string>('zero_g');
-  const [chamberMode, setChamberMode] = useState<'3d' | '2d'>('3d');
   const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
   const [isShortcutsModalOpen, setIsShortcutsModalOpen] = useState<boolean>(false);
   const [isAudioMode, setIsAudioMode] = useState<boolean>(false);
+  const [isStationAmbientEnabled, setIsStationAmbientEnabled] = useState<boolean>(true);
   const [shortcutToast, setShortcutToast] = useState<{ message: string; id: number } | null>(null);
+  const [selectedEmergencyScenarioId, setSelectedEmergencyScenarioId] = useState<string | null>(null);
+  const [requestedDatasetSelection, setRequestedDatasetSelection] = useState<{
+    experimentId: string;
+    viewMode?: 'programs' | 'psi159';
+    seq: number;
+  } | null>(null);
+
+  const handleLaunchEmergencyScenario = useCallback((scenarioId: string) => {
+    setSelectedEmergencyScenarioId(scenarioId);
+    setActiveTab('emergency');
+  }, []);
+
+  const handleOpenExperimentDataset = useCallback(
+    (experimentId: string, viewMode?: 'programs' | 'psi159') => {
+      setRequestedDatasetSelection((prev) => ({
+        experimentId,
+        viewMode,
+        seq: (prev?.seq ?? 0) + 1,
+      }));
+      setActiveTab('dataset');
+    },
+    []
+  );
 
   // Ambient ventilation humming sound via Web Audio API
   useEffect(() => {
@@ -84,6 +110,46 @@ export default function App() {
       ventilationAudio.updateSpeed(ventilationSpeed);
     }
   }, [ventilationSpeed, isAudioMode]);
+
+  // Subtle Space Station Ambient layer (equipment hum + low-frequency atmospheric swells)
+  // Auto-triggers whenever the user is active in the 'flame' tab
+  useEffect(() => {
+    const shouldPlay = isAppStarted && activeTab === 'flame' && isStationAmbientEnabled;
+    if (shouldPlay) {
+      spaceStationAmbient.start(pressureKpa);
+    } else {
+      spaceStationAmbient.stop();
+    }
+
+    const handleGestureResume = () => {
+      if (shouldPlay) {
+        spaceStationAmbient.resumeIfNeeded();
+        if (!spaceStationAmbient.getIsPlaying()) {
+          spaceStationAmbient.start(pressureKpa);
+        }
+      }
+    };
+
+    window.addEventListener('pointerdown', handleGestureResume, { passive: true });
+    window.addEventListener('keydown', handleGestureResume, { passive: true });
+
+    return () => {
+      window.removeEventListener('pointerdown', handleGestureResume);
+      window.removeEventListener('keydown', handleGestureResume);
+    };
+  }, [isAppStarted, activeTab, isStationAmbientEnabled]);
+
+  useEffect(() => {
+    if (isAppStarted && activeTab === 'flame' && isStationAmbientEnabled) {
+      spaceStationAmbient.updateAtmosphere(pressureKpa);
+    }
+  }, [pressureKpa, isAppStarted, activeTab, isStationAmbientEnabled]);
+
+  useEffect(() => {
+    return () => {
+      spaceStationAmbient.stop();
+    };
+  }, []);
 
   const showShortcutNotification = useCallback((msg: string) => {
     setShortcutToast({ message: msg, id: Date.now() });
@@ -188,6 +254,9 @@ export default function App() {
       } else if (e.key === '5') {
         setActiveTab('emergency');
         showShortcutNotification('View: Emergency Drill [5]');
+      } else if (e.key === '6') {
+        setActiveTab('history');
+        showShortcutNotification('View: Mission History [6]');
       } else if (e.key === '?' || (e.shiftKey && e.key === '?')) {
         setIsShortcutsModalOpen((prev) => !prev);
       } else if (e.key === 'Escape') {
@@ -242,6 +311,7 @@ export default function App() {
     setCurrentPresetId(preset.id);
     setGravityG(preset.gravityG);
     setVentilationSpeed(preset.ventilation);
+    setPressureKpa(preset.pressureKpa ?? 101.3);
     if (preset.gases) {
       const updated: Record<string, number> = {
         O2: 0,
@@ -357,170 +427,54 @@ export default function App() {
 
       {/* Main Single-Column Focused Workspace */}
       <main className="flex-1 max-w-6xl w-full mx-auto p-4 sm:p-6 flex flex-col gap-5">
-        {/* Quick Simulation Presets & Power Bar (Always Visible) */}
-        <div className="flex items-center justify-between p-2.5 rounded-2xl bg-slate-950/80 border border-slate-800 flex-wrap gap-2 text-xs font-mono">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-slate-400 mr-1 text-[11px]">Quick Setup:</span>
-            <button
-              onClick={() => {
-                const p = SIMPLE_PRESETS.find((x) => x.id === 'zero_g');
-                if (p) handleSelectPreset(p);
-              }}
-              className={`px-3 py-1 rounded-lg border transition-all ${
-                gravityG === 0 && ventilationSpeed > 0 && currentPresetId === 'zero_g'
-                  ? 'bg-cyan-500 text-slate-950 font-bold border-cyan-400'
-                  : 'bg-slate-900 text-slate-300 border-slate-800 hover:text-white'
-              }`}
-            >
-              0-G Space (ISS)
-            </button>
-            <button
-              onClick={() => {
-                const p = SIMPLE_PRESETS.find((x) => x.id === 'nasa_flex');
-                if (p) handleSelectPreset(p);
-              }}
-              className={`px-3 py-1 rounded-lg border transition-all ${
-                currentPresetId === 'nasa_flex'
-                  ? 'bg-cyan-400 text-slate-950 font-bold border-cyan-300'
-                  : 'bg-slate-900 text-slate-300 border-slate-800 hover:text-white'
-              }`}
-            >
-              NASA FLEX (Cool Flame)
-            </button>
-            <button
-              onClick={() => {
-                const p = SIMPLE_PRESETS.find((x) => x.id === 'nasa_sofie_gel');
-                if (p) handleSelectPreset(p);
-              }}
-              className={`px-3 py-1 rounded-lg border transition-all ${
-                currentPresetId === 'nasa_sofie_gel'
-                  ? 'bg-purple-500 text-white font-bold border-purple-400'
-                  : 'bg-slate-900 text-slate-300 border-slate-800 hover:text-white'
-              }`}
-            >
-              NASA SOPHIA-GEL
-            </button>
-            <button
-              onClick={() => {
-                const p = SIMPLE_PRESETS.find((x) => x.id === 'nasa_psi159_cool');
-                if (p) handleSelectPreset(p);
-              }}
-              className={`px-3 py-1 rounded-lg border transition-all ${
-                currentPresetId === 'nasa_psi159_cool'
-                  ? 'bg-cyan-400 text-slate-950 font-bold border-cyan-300'
-                  : 'bg-slate-900 text-slate-300 border-slate-800 hover:text-white'
-              }`}
-            >
-              NASA PSI-159 (Cool Flame)
-            </button>
-            <button
-              onClick={() => {
-                const p = SIMPLE_PRESETS.find((x) => x.id === 'earth_1g');
-                if (p) handleSelectPreset(p);
-              }}
-              className={`px-3 py-1 rounded-lg border transition-all ${
-                gravityG === 1
-                  ? 'bg-indigo-500 text-slate-950 font-bold border-indigo-400'
-                  : 'bg-slate-900 text-slate-300 border-slate-800 hover:text-white'
-              }`}
-            >
-              1-G Earth Normal
-            </button>
-            <button
-              onClick={() => {
-                const p = SIMPLE_PRESETS.find((x) => x.id === 'hyper_10g');
-                if (p) handleSelectPreset(p);
-              }}
-              className={`px-3 py-1 rounded-lg border transition-all ${
-                gravityG >= 9.9
-                  ? 'bg-rose-500 text-white font-bold border-rose-400'
-                  : 'bg-slate-900 text-slate-300 border-slate-800 hover:text-white'
-              }`}
-            >
-              10-G Hypergravity
-            </button>
-            <button
-              onClick={() => {
-                const p = SIMPLE_PRESETS.find((x) => x.id === 'methane_leak');
-                if (p) handleSelectPreset(p);
-              }}
-              className={`px-3 py-1 rounded-lg border transition-all ${
-                (gases['CH4'] ?? 0) > 0
-                  ? 'bg-orange-500 text-slate-950 font-bold border-orange-400'
-                  : 'bg-slate-900 text-slate-300 border-slate-800 hover:text-white'
-              }`}
-            >
-              Methane Flare (CH₄)
-            </button>
-            <button
-              onClick={() => {
-                const p = SIMPLE_PRESETS.find((x) => x.id === 'krypton_thruster');
-                if (p) handleSelectPreset(p);
-              }}
-              className={`px-3 py-1 rounded-lg border transition-all ${
-                (gases['Kr'] ?? 0) > 0
-                  ? 'bg-fuchsia-500 text-slate-950 font-bold border-fuchsia-400'
-                  : 'bg-slate-900 text-slate-300 border-slate-800 hover:text-white'
-              }`}
-            >
-              Krypton Mix (Kr)
-            </button>
-            <button
-              onClick={() => {
-                const p = SIMPLE_PRESETS.find((x) => x.id === 'hypoxic_quench');
-                if (p) handleSelectPreset(p);
-              }}
-              className={`px-3 py-1 rounded-lg border transition-all ${
-                o2 <= 12
-                  ? 'bg-amber-500 text-slate-950 font-bold border-amber-400'
-                  : 'bg-slate-900 text-slate-300 border-slate-800 hover:text-white'
-              }`}
-            >
-              Low O₂ Quench (11%)
-            </button>
-          </div>
-
-          <div className="flex items-center gap-2 ml-auto">
-            <button
-              onClick={handleResetToZeroG}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-700 bg-slate-900/90 hover:bg-slate-800 text-slate-300 text-xs font-mono font-bold transition-all shadow-sm active:scale-95"
-              title="Reset environment to 0-G baseline settings (Keyboard: [R])"
-            >
-              <RotateCcw className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Reset 0-G</span>
-              <kbd className="hidden sm:inline-block px-1 py-0.2 text-[9px] bg-slate-800 text-slate-400 rounded border border-slate-700 font-mono">R</kbd>
-            </button>
-
-            <button
-              onClick={() => setIsShareModalOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-cyan-500/40 bg-cyan-950/60 hover:bg-cyan-900/60 text-cyan-300 text-xs font-mono font-bold transition-all shadow-sm active:scale-95"
-              title="Share simulation parameters as JSON"
-            >
-              <Share2 className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Share Simulation</span>
-            </button>
-
-            <button
-              onClick={handleToggleIgnition}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-mono font-bold transition-all shadow-sm active:scale-95 ${
-                isIgnited
-                  ? 'bg-rose-600/20 text-rose-300 border-rose-500/50 hover:bg-rose-600/30'
-                  : 'bg-emerald-500 text-slate-950 border-emerald-400 hover:bg-emerald-400'
-              }`}
-              title="Toggle flame ignition (Keyboard: [Space])"
-            >
-              <Power className="w-3.5 h-3.5" />
-              <span>{isIgnited ? 'Extinguish Flame' : 'Ignite Flame'}</span>
-              <kbd className={`hidden sm:inline-block px-1.5 py-0.2 text-[9px] rounded border font-mono ${
-                isIgnited ? 'bg-rose-950/80 border-rose-700 text-rose-300' : 'bg-emerald-950/80 border-emerald-700 text-emerald-300'
-              }`}>Space</kbd>
-            </button>
-          </div>
-        </div>
+        {/* Quick Simulation Presets with Hardware LED Atmosphere Intensity Indicators */}
+        <QuickSetupPresetBar
+          currentPresetId={currentPresetId}
+          gravityG={gravityG}
+          ventilationSpeed={ventilationSpeed}
+          gases={gases}
+          isIgnited={isIgnited}
+          onSelectPreset={handleSelectPreset}
+          onResetToZeroG={handleResetToZeroG}
+          onOpenShare={() => setIsShareModalOpen(true)}
+          onToggleIgnition={handleToggleIgnition}
+        />
 
         {/* TAB 1: FLAME SIMULATION (Chamber + 4 Drivers + 10-Gas Mixer) */}
         {activeTab === 'flame' && (
           <div className="flex flex-col gap-4">
+            {/* Interactive Live Chamber Safety Drill */}
+            <SafetyDrillWidget
+              gases={gases}
+              pressureKpa={pressureKpa}
+              gravityG={gravityG}
+              ventilationSpeed={ventilationSpeed}
+              isIgnited={isIgnited}
+              flameTempK={flameTempK}
+              operatorName={activeAstronaut.name || activeAstronaut.callSign}
+              onInjectEmergency={(injectState) => {
+                setGases({
+                  O2: injectState.o2Pct,
+                  N2: injectState.n2Pct,
+                  CO2: injectState.co2Pct,
+                  CH4: injectState.ch4Pct ?? 0,
+                  Kr: 0,
+                  H2: 0,
+                  He: 0,
+                  Ar: 0,
+                  CO: injectState.coPct ?? 0,
+                  C3H8: 0,
+                });
+                setPressureKpa(injectState.pressureKpa);
+                setGravityG(injectState.gravityG);
+                setVentilationSpeed(injectState.ventilationSpeed);
+                setIsIgnited(injectState.isIgnited);
+                setCurrentPresetId('');
+                showShortcutNotification('EMERGENCY ANOMALY INJECTED: Adjust O₂ / CO₂ & Airflow!');
+              }}
+              onRestoreNominal={handleResetToZeroG}
+            />
+
             {/* 4 Core Controls (O2, CO2, Airflow, G-Force) & Response Status */}
             <FlameResponseControls
               gases={gases}
@@ -534,33 +488,14 @@ export default function App() {
               isAudioMode={isAudioMode}
             />
 
-            {/* Combustion Chamber with 3D Studio PBR & 2D Telemetry Toggle */}
+            {/* Combustion Chamber with High-Precision 2D Diagnostics */}
             <div className="rounded-2xl bg-slate-950/90 border border-slate-800 p-3 sm:p-4 shadow-xl flex flex-col gap-3">
-              {/* Chamber Mode Switcher Header */}
+              {/* Chamber Header & Fuel Specimen Selector */}
               <div className="flex items-center justify-between pb-2 border-b border-slate-800/80 flex-wrap gap-2 text-xs font-mono">
                 <div className="flex items-center gap-2">
-                  <span className="text-slate-400 text-[11px] font-bold">VIEWPORT MODE:</span>
-                  <div className="flex items-center bg-slate-900 p-0.5 rounded-xl border border-slate-800">
-                    <button
-                      onClick={() => setChamberMode('3d')}
-                      className={`flex items-center gap-1.5 px-3 py-1 rounded-lg transition-all font-bold ${
-                        chamberMode === '3d'
-                          ? 'bg-cyan-500 text-slate-950 shadow-sm'
-                          : 'text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      <span>🔬 3D Studio PBR Rig (Three.js)</span>
-                    </button>
-                    <button
-                      onClick={() => setChamberMode('2d')}
-                      className={`flex items-center gap-1.5 px-3 py-1 rounded-lg transition-all font-bold ${
-                        chamberMode === '2d'
-                          ? 'bg-cyan-500 text-slate-950 shadow-sm'
-                          : 'text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      <span>📊 2D Sensor Diagnostics</span>
-                    </button>
+                  <div className="flex items-center gap-2 px-3 py-1 rounded-xl bg-cyan-500/15 border border-cyan-500/40 text-cyan-200 font-bold shadow-sm">
+                    <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+                    <span>NASA CFM COMBUSTION CHAMBER • 2D HIGH-SPEED FLUID DYNAMICS</span>
                   </div>
                 </div>
 
@@ -584,48 +519,54 @@ export default function App() {
                     </select>
                   </div>
 
-                  <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800">
-                    {chamberMode === '3d' ? 'PBR Studio Lighting • Zero-Occlusion' : 'Flame Boundary • Sensor Probe'}
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = !isStationAmbientEnabled;
+                      setIsStationAmbientEnabled(next);
+                      showShortcutNotification(
+                        next
+                          ? 'Space Station Ambient: ON (Equipment Hum & Hull Drift)'
+                          : 'Space Station Ambient: Muted'
+                      );
+                    }}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl border transition-colors font-mono ${
+                      isStationAmbientEnabled
+                        ? 'bg-cyan-950/70 border-cyan-500/50 text-cyan-200 hover:bg-cyan-900/60'
+                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                    }`}
+                    title="Toggle Space Station Ambient audio layer (equipment hum & low-frequency atmospheric drift)"
+                  >
+                    {isStationAmbientEnabled ? (
+                      <Volume2 className="w-3.5 h-3.5 text-cyan-400" />
+                    ) : (
+                      <VolumeX className="w-3.5 h-3.5 text-slate-500" />
+                    )}
+                    <span>Station Ambient: {isStationAmbientEnabled ? 'ON' : 'OFF'}</span>
+                  </button>
                 </div>
               </div>
 
-              {/* Viewport Content */}
-              {chamberMode === '3d' ? (
-                <ThreeFlameChamber
-                  gases={gases}
-                  pressureKpa={pressureKpa}
-                  gravityG={gravityG}
-                  onGravityChange={setGravityG}
-                  ventilationSpeed={ventilationSpeed}
-                  onVentilationChange={setVentilationSpeed}
-                  fuel={selectedFuel}
-                  isIgnited={isIgnited}
-                  onToggleIgnite={() => setIsIgnited(!isIgnited)}
-                  flameTempK={flameTempK}
-                  dangerLevel={gravityG > 0 ? 'NOMINAL' : 'MICROGRAVITY'}
-                />
-              ) : (
-                <ChamberCanvas
-                  gases={gases}
-                  onGasChange={handleGasChange}
-                  pressureKpa={pressureKpa}
-                  gravityG={gravityG}
-                  onGravityChange={setGravityG}
-                  ventilationSpeed={ventilationSpeed}
-                  onVentilationChange={setVentilationSpeed}
-                  fuel={selectedFuel}
-                  isIgnited={isIgnited}
-                  onToggleIgnite={() => setIsIgnited(!isIgnited)}
-                  onCutVentilation={() => setVentilationSpeed(0)}
-                  onPurgeChamber={() => {
-                    setGases({ O2: 0, N2: 100, CO2: 0, CH4: 0, Kr: 0, H2: 0, He: 0, Ar: 0, CO: 0, C3H8: 0 });
-                    setIsIgnited(false);
-                  }}
-                  flameTempK={flameTempK}
-                  dangerLevel={gravityG > 0 ? 'NOMINAL' : 'MICROGRAVITY'}
-                />
-              )}
+              {/* High-Precision 2D Combustion Chamber Canvas */}
+              <ChamberCanvas
+                gases={gases}
+                onGasChange={handleGasChange}
+                pressureKpa={pressureKpa}
+                gravityG={gravityG}
+                onGravityChange={setGravityG}
+                ventilationSpeed={ventilationSpeed}
+                onVentilationChange={setVentilationSpeed}
+                fuel={selectedFuel}
+                isIgnited={isIgnited}
+                onToggleIgnite={() => setIsIgnited(!isIgnited)}
+                onCutVentilation={() => setVentilationSpeed(0)}
+                onPurgeChamber={() => {
+                  setGases({ O2: 0, N2: 100, CO2: 0, CH4: 0, Kr: 0, H2: 0, He: 0, Ar: 0, CO: 0, C3H8: 0 });
+                  setIsIgnited(false);
+                }}
+                flameTempK={flameTempK}
+                dangerLevel={gravityG > 0 ? 'NOMINAL' : 'MICROGRAVITY'}
+              />
             </div>
 
             {/* 60-Second Flame Temperature History & Stability Graph */}
@@ -663,6 +604,10 @@ export default function App() {
               fuel={selectedFuel}
               isIgnited={isIgnited}
               onGasChange={handleGasChange}
+              onLaunchEmergencyScenario={handleLaunchEmergencyScenario}
+              initialExperimentId={requestedDatasetSelection?.experimentId ?? null}
+              initialViewMode={requestedDatasetSelection?.viewMode ?? null}
+              experimentRequestSeq={requestedDatasetSelection?.seq ?? 0}
             />
           </div>
         )}
@@ -716,6 +661,8 @@ export default function App() {
         {/* TAB 5: EMERGENCY PROCEDURES TAB */}
         {activeTab === 'emergency' && (
           <EmergencyProceduresTab
+            initialScenarioId={selectedEmergencyScenarioId}
+            operatorName={activeAstronaut.name || activeAstronaut.callSign}
             onSimulateInChamber={(conditions) => {
               setGravityG(conditions.gravityG);
               setVentilationSpeed(conditions.ventilationSpeed);
@@ -729,6 +676,52 @@ export default function App() {
               setIsIgnited(true);
               setActiveTab('flame');
             }}
+          />
+        )}
+
+        {/* TAB 6: MISSION HISTORY TIMELINE TAB */}
+        {activeTab === 'history' && (
+          <MissionHistoryTab
+            onOpenExperimentDataset={(experimentId, viewMode) => {
+              handleOpenExperimentDataset(experimentId, viewMode);
+              showShortcutNotification(`Opened NASA Dataset (${experimentId.toUpperCase()})`);
+            }}
+            onSimulateConditions={(conditions) => {
+              setGravityG(conditions.gravityG);
+              setVentilationSpeed(conditions.ventilationSpeed);
+              setPressureKpa(conditions.pressureKpa);
+              if (conditions.extraGases) {
+                setGases({
+                  O2: 0,
+                  N2: 0,
+                  CO2: 0,
+                  CH4: 0,
+                  Kr: 0,
+                  H2: 0,
+                  He: 0,
+                  Ar: 0,
+                  CO: 0,
+                  C3H8: 0,
+                  ...conditions.extraGases,
+                });
+              } else {
+                setGases((prev) => ({
+                  ...prev,
+                  O2: conditions.o2Pct,
+                  CO2: conditions.co2Pct,
+                  CO: 0,
+                  N2: Math.max(0, 100 - conditions.o2Pct - conditions.co2Pct),
+                }));
+              }
+              const matchedFuel = AVAILABLE_FUELS.find((f) =>
+                f.name.toLowerCase().includes(conditions.fuelName.split('(')[0].trim().toLowerCase())
+              );
+              if (matchedFuel) setSelectedFuel(matchedFuel);
+              setIsIgnited(true);
+              setActiveTab('flame');
+              showShortcutNotification('Loaded historic mission conditions into 2D chamber');
+            }}
+            onLaunchEmergencyScenario={handleLaunchEmergencyScenario}
           />
         )}
       </main>
@@ -771,6 +764,9 @@ export default function App() {
           } else if (id === '5') {
             setActiveTab('emergency');
             showShortcutNotification('View: Emergency Drill [5]');
+          } else if (id === '6') {
+            setActiveTab('history');
+            showShortcutNotification('View: Mission History [6]');
           }
         }}
       />
@@ -797,6 +793,10 @@ export default function App() {
         onTriggerRandomScenario={() => {
           setActiveTab('emergency');
           showShortcutNotification('Emergency Drill Scenario Activated');
+        }}
+        onLaunchEmergencyScenario={(scenarioId) => {
+          handleLaunchEmergencyScenario(scenarioId);
+          showShortcutNotification('Loaded Historic NASA Case Study Drill');
         }}
       />
 

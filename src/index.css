@@ -171,3 +171,42 @@
 .animate-gas-puff {
   animation: gasPuff 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
+
+/* Realistic Combustion Flame Flickering Keyframe Animation */
+@keyframes flameFlicker {
+  0% {
+    filter: brightness(0.98) drop-shadow(0 0 10px rgba(245, 158, 11, 0.16)) drop-shadow(0 0 22px rgba(56, 189, 248, 0.08));
+    transform: scale(1) translateY(0);
+  }
+  18% {
+    filter: brightness(1.03) drop-shadow(0 0 15px rgba(245, 158, 11, 0.24)) drop-shadow(0 0 30px rgba(56, 189, 248, 0.14));
+    transform: scale(1.004, 1.007) translateY(-0.4px);
+  }
+  36% {
+    filter: brightness(0.97) drop-shadow(0 0 9px rgba(245, 158, 11, 0.14)) drop-shadow(0 0 18px rgba(56, 189, 248, 0.06));
+    transform: scale(0.998, 0.996) translateY(0.2px);
+  }
+  54% {
+    filter: brightness(1.04) drop-shadow(0 0 17px rgba(245, 158, 11, 0.28)) drop-shadow(0 0 34px rgba(56, 189, 248, 0.16));
+    transform: scale(1.005, 1.009) translateY(-0.5px);
+  }
+  72% {
+    filter: brightness(0.99) drop-shadow(0 0 12px rgba(245, 158, 11, 0.18)) drop-shadow(0 0 24px rgba(56, 189, 248, 0.1));
+    transform: scale(1.001, 1.002) translateY(-0.2px);
+  }
+  86% {
+    filter: brightness(1.02) drop-shadow(0 0 14px rgba(245, 158, 11, 0.22)) drop-shadow(0 0 28px rgba(56, 189, 248, 0.12));
+    transform: scale(0.999, 1.004) translateY(-0.3px);
+  }
+  100% {
+    filter: brightness(0.98) drop-shadow(0 0 10px rgba(245, 158, 11, 0.16)) drop-shadow(0 0 22px rgba(56, 189, 248, 0.08));
+    transform: scale(1) translateY(0);
+  }
+}
+
+.animate-flame-flicker {
+  animation: flameFlicker 0.65s ease-in-out infinite;
+  transform-origin: center bottom;
+  will-change: filter, transform;
+}
+

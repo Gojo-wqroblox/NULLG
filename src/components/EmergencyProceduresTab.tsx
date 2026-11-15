@@ -39,8 +39,18 @@ import {
   BookOpen,
 } from 'lucide-react';
 import { EmergencyInstructionsDashboard } from './EmergencyInstructionsDashboard';
+import { StationCompartmentRadarGraphic } from './dashboard-graphics/StationCompartmentRadarGraphic';
+import {
+  loadDrillHighScores,
+  saveDrillHighScore,
+  clearDrillHighScores,
+  type DrillHighScoreEntry,
+} from './DrillHighScores';
+import { DrillLeaderboard } from './DrillLeaderboard';
 
 interface EmergencyProceduresTabProps {
+  initialScenarioId?: string | null;
+  operatorName?: string;
   onSimulateInChamber: (conditions: {
     gravityG: number;
     o2Pct: number;
@@ -62,12 +72,25 @@ interface EvaluationResult {
 }
 
 export const EmergencyProceduresTab: React.FC<EmergencyProceduresTabProps> = ({
+  initialScenarioId,
+  operatorName = 'Crew',
   onSimulateInChamber,
 }) => {
   // Scenario state
-  const [currentScenario, setCurrentScenario] = useState<EmergencyScenario>(
-    NASA_EMERGENCY_SCENARIOS[0]
-  );
+  const [currentScenario, setCurrentScenario] = useState<EmergencyScenario>(() => {
+    if (initialScenarioId) {
+      const found = NASA_EMERGENCY_SCENARIOS.find((s) => s.id === initialScenarioId);
+      if (found) return found;
+    }
+    return NASA_EMERGENCY_SCENARIOS[0];
+  });
+
+  useEffect(() => {
+    if (initialScenarioId) {
+      const found = NASA_EMERGENCY_SCENARIOS.find((s) => s.id === initialScenarioId);
+      if (found) setCurrentScenario(found);
+    }
+  }, [initialScenarioId]);
   const [selectedContainment, setSelectedContainment] = useState<string>('cut_vent_and_power');
   const [selectedAgent, setSelectedAgent] = useState<string>('co2');
   const [selectedPostAction, setSelectedPostAction] = useState<string>('pba_tccs');
@@ -90,6 +113,10 @@ export const EmergencyProceduresTab: React.FC<EmergencyProceduresTabProps> = ({
     streak: 0,
     highScore: 0,
   });
+  const [drillHighScores, setDrillHighScores] = useState<DrillHighScoreEntry[]>(() =>
+    loadDrillHighScores()
+  );
+  const [latestScoreId, setLatestScoreId] = useState<string | null>(null);
 
   // Countdown timer effect
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -284,6 +311,20 @@ export const EmergencyProceduresTab: React.FC<EmergencyProceduresTabProps> = ({
 
       if (status === 'SUCCESS') {
         if (!isMuted) playSuccessChime();
+        const elapsedSec = Math.max(0.5, Number((currentScenario.timeLimitSec - timeLeft).toFixed(1)));
+        const agentName =
+          SUPPRESSION_AGENTS.find((a) => a.id === selectedAgent)?.name || selectedAgent;
+        const { entries, savedEntry } = saveDrillHighScore({
+          scenarioId: currentScenario.id,
+          scenarioCode: currentScenario.moduleName.split(' ')[0].toUpperCase(),
+          scenarioTitle: currentScenario.title,
+          responseTimeSec: elapsedSec,
+          timeLimitSec: currentScenario.timeLimitSec,
+          quenchMethod: agentName,
+          operatorName: operatorName.trim() || 'Crew',
+        });
+        setDrillHighScores(entries);
+        setLatestScoreId(savedEntry.id);
         setStats((prev) => ({
           attempts: prev.attempts + 1,
           successes: prev.successes + 1,
@@ -467,6 +508,14 @@ export const EmergencyProceduresTab: React.FC<EmergencyProceduresTabProps> = ({
               </span>
               <span className="text-[10px] font-mono text-emerald-400">TELEMETRY STREAMING</span>
             </div>
+
+            {/* Tactical Station Compartment Radar Graphic */}
+            <StationCompartmentRadarGraphic
+              moduleName={currentScenario.moduleName}
+              urgency={currentScenario.urgency}
+              fireClass={currentScenario.fireClass}
+              tempC={currentScenario.sensorData.tempC}
+            />
 
             <div className="grid grid-cols-2 gap-2.5 font-mono text-xs">
               <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800/90 flex flex-col">
@@ -916,6 +965,17 @@ export const EmergencyProceduresTab: React.FC<EmergencyProceduresTabProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Persisted Top 5 Drill Leaderboard */}
+      <DrillLeaderboard
+        entries={drillHighScores}
+        highlightedEntryId={latestScoreId}
+        stats={{ cleared: stats.successes, failed: Math.max(0, stats.attempts - stats.successes) }}
+        onClearHistory={() => {
+          setDrillHighScores(clearDrillHighScores());
+          setLatestScoreId(null);
+        }}
+      />
     </div>
   );
 };

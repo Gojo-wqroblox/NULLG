@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import {
   Flame,
   Wind,
@@ -16,9 +16,17 @@ import {
   RotateCcw,
   Compass,
   Sliders,
+  Thermometer,
+  Layers,
+  Gauge,
 } from 'lucide-react';
 import { GasDefinition, FuelDefinition } from '../types';
 import { flameAudio } from '../services/flameAudioService';
+import {
+  renderD3ThermalOverlay,
+  getThermalProbeMetrics,
+  ThermalPalette,
+} from '../utils/thermalPhysics';
 
 interface ChamberCanvasProps {
   gases: Record<string, number>;
@@ -73,10 +81,25 @@ export const ChamberCanvas: React.FC<ChamberCanvasProps> = ({
   const animFrameRef = useRef<number | null>(null);
   const [sparkAnimation, setSparkAnimation] = useState<number>(0);
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
+  const [pinnedProbe, setPinnedProbe] = useState<{ x: number; y: number } | null>(null);
 
   // Flame & Candle Zoom Scale (defaulted to 0.65x for a comfortable, wide zoomed-out perspective)
   const [flameZoomScale, setFlameZoomScale] = useState<number>(0.65);
   const [flameGlowMode, setFlameGlowMode] = useState<'vivid' | 'ultra'>('ultra');
+  const [showStreamlines2D, setShowStreamlines2D] = useState<boolean>(true);
+  const [showIsotherms, setShowIsotherms] = useState<boolean>(true);
+
+  // Interactive D3-based Thermodynamic Thermal Heatmap Overlay State
+  const [showThermalOverlay, setShowThermalOverlay] = useState<boolean>(false);
+  const [thermalPalette, setThermalPalette] = useState<ThermalPalette>('inferno');
+  const [thermalDisplayMode, setThermalDisplayMode] = useState<'both' | 'heatmap' | 'contours'>('both');
+  const [thermalOpacity, setThermalOpacity] = useState<number>(0.65);
+  const [hoveredLegendTemp, setHoveredLegendTemp] = useState<number | null>(null);
+  const offscreenThermalCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    offscreenThermalCanvasRef.current = document.createElement('canvas');
+  }, []);
 
   // Audio Context & Alarm State
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -111,6 +134,61 @@ export const ChamberCanvas: React.FC<ChamberCanvasProps> = ({
   const canCombust = (o2 >= 11 && novec <= 6 && sf6 <= 8 && co2 < 38) || isSilaneAutoIgnited;
   const effectivelyBurning = (isIgnited || isSilaneAutoIgnited) && canCombust && !isSuffocated;
 
+  // Real-time thermographic probe computation for canvas cursor hover
+  const currentProbeMetrics = useMemo(() => {
+    if (!mousePos) return null;
+    return getThermalProbeMetrics(mousePos.x, mousePos.y, {
+      width: 720,
+      height: 405,
+      scaleFactor: 0.72 * flameZoomScale,
+      effectivelyBurning,
+      flameTempK,
+      gravityG,
+      ventilationSpeed,
+      o2,
+      co2,
+      starvationProgress,
+      flameZoomScale,
+    });
+  }, [
+    mousePos,
+    flameZoomScale,
+    effectivelyBurning,
+    flameTempK,
+    gravityG,
+    ventilationSpeed,
+    o2,
+    co2,
+    starvationProgress,
+  ]);
+
+  const pinnedProbeMetrics = useMemo(() => {
+    if (!pinnedProbe) return null;
+    return getThermalProbeMetrics(pinnedProbe.x, pinnedProbe.y, {
+      width: 720,
+      height: 405,
+      scaleFactor: 0.72 * flameZoomScale,
+      effectivelyBurning,
+      flameTempK,
+      gravityG,
+      ventilationSpeed,
+      o2,
+      co2,
+      starvationProgress,
+      flameZoomScale,
+    });
+  }, [
+    pinnedProbe,
+    flameZoomScale,
+    effectivelyBurning,
+    flameTempK,
+    gravityG,
+    ventilationSpeed,
+    o2,
+    co2,
+    starvationProgress,
+  ]);
+
   // Trigger spark animation effect
   const handleSparkTrigger = () => {
     if (flameAudioEnabled) {
@@ -137,11 +215,40 @@ export const ChamberCanvas: React.FC<ChamberCanvasProps> = ({
     setMousePos(null);
   };
 
-  // Click on canvas to interact / ignite
-  const handleCanvasClick = () => {
+  // Click on canvas to ignite OR pin a physical thermocouple probe & inject a convective eddy pulse
+  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (flameAudioEnabled) {
       flameAudio.initAudio();
     }
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const rect = canvas.getBoundingClientRect();
+      const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+      const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+
+      // Emit a real physical eddy/spark burst at the clicked chamber coordinates
+      for (let i = 0; i < 14; i++) {
+        const angle = (Math.PI * 2 * i) / 14 + (Math.random() - 0.5) * 0.35;
+        const speed = 1.2 + Math.random() * 2.2;
+        particlesRef.current.push({
+          x,
+          y,
+          vx: Math.cos(angle) * speed + ventilationSpeed * 2.5,
+          vy: Math.sin(angle) * speed - gravityG * 0.4,
+          size: 1.5 + Math.random() * 2.0,
+          alpha: 0.9,
+          maxLife: 24 + Math.random() * 14,
+          life: 0,
+          color: effectivelyBurning ? '#38bdf8' : '#fbbf24',
+          type: 'spark',
+        });
+      }
+
+      if (effectivelyBurning) {
+        setPinnedProbe({ x, y });
+      }
+    }
+
     if (!isIgnited && canCombust) {
       handleSparkTrigger();
     }
@@ -628,19 +735,113 @@ export const ChamberCanvas: React.FC<ChamberCanvasProps> = ({
           ctx.arc(flameCenterX, flameCenterY, haloRadius, 0, Math.PI * 2);
           ctx.fill();
 
+          // 1-B. Dynamic Convective 2D Streamlines with Flowing Tracer Pulses
+          if (showStreamlines2D) {
+            ctx.save();
+            const streamlineCount = 8;
+            for (let i = 0; i < streamlineCount; i++) {
+              const lateralOffset = (i - streamlineCount / 2 + 0.5) * 26 * scaleFactor;
+              const startX = flameCenterX + lateralOffset;
+              const startY = wickTopY + 45 * scaleFactor;
+              
+              // Buoyant upward pull
+              const buoyantPull = gravityG * 35 * scaleFactor;
+              const windShift = ventilationSpeed * 35 * scaleFactor;
+              
+              const midX = flameCenterX + lateralOffset * 0.45 + windShift * 0.4;
+              const midY = flameCenterY + 10 * scaleFactor;
+              
+              const endX = flameCenterX + (lateralOffset * (1 / (1 + gravityG * 1.2))) + windShift;
+              const endY = flameCenterY - (55 * scaleFactor + buoyantPull);
+
+              ctx.strokeStyle = 'rgba(56, 189, 248, 0.22)';
+              ctx.lineWidth = 1.2;
+              ctx.setLineDash([4, 4]);
+              ctx.lineDashOffset = -time * 18;
+              ctx.beginPath();
+              ctx.moveTo(startX, startY);
+              ctx.quadraticCurveTo(midX, midY, endX, endY);
+              ctx.stroke();
+              ctx.setLineDash([]);
+
+              // Glowing Flow Tracer Pulse
+              const tracerProg = ((time * 0.75 + i / streamlineCount) % 1.0);
+              const tx = (1 - tracerProg) * (1 - tracerProg) * startX + 2 * (1 - tracerProg) * tracerProg * midX + tracerProg * tracerProg * endX;
+              const ty = (1 - tracerProg) * (1 - tracerProg) * startY + 2 * (1 - tracerProg) * tracerProg * midY + tracerProg * tracerProg * endY;
+
+              ctx.fillStyle = 'rgba(125, 211, 252, 0.75)';
+              ctx.beginPath();
+              ctx.arc(tx, ty, 1.8 * scaleFactor, 0, Math.PI * 2);
+              ctx.fill();
+            }
+            ctx.restore();
+          }
+
+          // 1-C. Dynamic Isothermal Temperature Contours
+          if (showIsotherms) {
+            ctx.save();
+            const isoLevels = [
+              { temp: '1600K', r: baseRadius * 1.15, col: 'rgba(239, 68, 68, 0.45)', dash: [3, 3] },
+              { temp: '1000K', r: baseRadius * 1.65, col: 'rgba(245, 158, 11, 0.35)', dash: [4, 4] },
+              { temp: '500K', r: baseRadius * 2.15, col: 'rgba(56, 189, 248, 0.28)', dash: [5, 4] },
+            ];
+
+            isoLevels.forEach((iso, idx) => {
+              const waveRipple = Math.sin(time * 3 + idx) * 1.5;
+              const currentR = iso.r + waveRipple;
+              ctx.strokeStyle = iso.col;
+              ctx.lineWidth = 1;
+              ctx.setLineDash(iso.dash);
+              ctx.lineDashOffset = time * (idx % 2 === 0 ? 5 : -5);
+
+              ctx.beginPath();
+              if (gravityG === 0) {
+                ctx.arc(flameCenterX, flameCenterY, currentR, 0, Math.PI * 2);
+              } else {
+                const elongY = 1 + Math.pow(Math.max(0.01, gravityG), 0.3) * 0.6;
+                ctx.ellipse(flameCenterX, flameCenterY - 6 * scaleFactor, currentR * 0.85, currentR * elongY, 0, 0, Math.PI * 2);
+              }
+              ctx.stroke();
+              ctx.setLineDash([]);
+
+              // Isotherm Kelvin Label
+              ctx.fillStyle = iso.col;
+              ctx.font = '8px JetBrains Mono';
+              ctx.fillText(iso.temp, flameCenterX + currentR * 0.75, flameCenterY - (gravityG > 0 ? currentR * 0.6 : 0));
+            });
+            ctx.restore();
+          }
+
           // 2. Combustion Morphology: Zero-G Blue Sphere vs 1-G Updraft Teardrop
           if (gravityG === 0) {
-            const breathePulse = Math.sin(time * 3.5) * 2.0;
+            // Dual-harmonic organic radial breathing
+            const breathePulse = Math.sin(time * 3.2) * (2.2 * scaleFactor) + Math.cos(time * 7.5) * (0.8 * scaleFactor);
             const sphereR = Math.max(10, baseRadius + breathePulse);
 
             if (ventilationSpeed > 0.05) {
-              // Forced Convection: Aerodynamic Tail trailing downwind
+              // Forced Convection: Aerodynamic Tail trailing downwind with aerodynamic vortex ripple
               ctx.save();
               ctx.translate(wickTopX, wickTopY);
+
+              const tailWobble = Math.sin(time * 16) * (2.2 * scaleFactor);
               ctx.beginPath();
               ctx.moveTo(-sphereR * 0.75, 0);
-              ctx.bezierCurveTo(-sphereR * 0.5, -sphereR * 0.95, windShiftX * 0.5, -sphereR * 0.75, windShiftX * 1.6, 0);
-              ctx.bezierCurveTo(windShiftX * 0.5, sphereR * 0.75, -sphereR * 0.5, sphereR * 0.95, -sphereR * 0.75, 0);
+              ctx.bezierCurveTo(
+                -sphereR * 0.5,
+                -sphereR * 0.95 + tailWobble * 0.4,
+                windShiftX * 0.5,
+                -sphereR * 0.75 + tailWobble,
+                windShiftX * 1.6,
+                tailWobble * 0.8
+              );
+              ctx.bezierCurveTo(
+                windShiftX * 0.5,
+                sphereR * 0.75 + tailWobble,
+                -sphereR * 0.5,
+                sphereR * 0.95 - tailWobble * 0.4,
+                -sphereR * 0.75,
+                0
+              );
               ctx.closePath();
 
               const flameGrad = ctx.createLinearGradient(-sphereR * 0.75, 0, windShiftX * 1.6, 0);
@@ -652,15 +853,29 @@ export const ChamberCanvas: React.FC<ChamberCanvasProps> = ({
               ctx.fillStyle = flameGrad;
               ctx.fill();
 
-              // Inner luminous core
+              // Inner luminous core with high-frequency micro-flicker
+              const innerCoreBreathe = Math.sin(time * 12) * 1.2;
               ctx.beginPath();
-              ctx.ellipse(windShiftX * 0.25, 0, sphereR * 0.45, sphereR * 0.35, 0, 0, Math.PI * 2);
+              ctx.ellipse(windShiftX * 0.25, 0, (sphereR * 0.45) + innerCoreBreathe, sphereR * 0.35, 0, 0, Math.PI * 2);
               ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
               ctx.fill();
 
               ctx.restore();
             } else {
-              // Quiescent Zero-G Spherical Ball
+              // Quiescent Zero-G Spherical Ball with Excited OH* Radical Corona
+              // Outer Chemiluminescent Blue Radical Ring
+              ctx.save();
+              const radicalR = sphereR * 1.28 + Math.sin(time * 5) * 1.5;
+              ctx.strokeStyle = 'rgba(56, 189, 248, 0.45)';
+              ctx.lineWidth = 2.5 * scaleFactor;
+              ctx.shadowColor = '#38bdf8';
+              ctx.shadowBlur = 12;
+              ctx.beginPath();
+              ctx.arc(flameCenterX, flameCenterY, radicalR, 0, Math.PI * 2);
+              ctx.stroke();
+              ctx.restore();
+
+              // Main Spherical Diffusion Envelope
               const sphereGrad = ctx.createRadialGradient(
                 flameCenterX,
                 flameCenterY,
@@ -670,8 +885,8 @@ export const ChamberCanvas: React.FC<ChamberCanvasProps> = ({
                 sphereR
               );
               sphereGrad.addColorStop(0, '#ffffff');
-              sphereGrad.addColorStop(0.25, coreColor + '0.98)');
-              sphereGrad.addColorStop(0.65, midColor + '0.88)');
+              sphereGrad.addColorStop(0.22, coreColor + '0.98)');
+              sphereGrad.addColorStop(0.62, midColor + '0.88)');
               sphereGrad.addColorStop(0.92, outerColor + '0.85)');
               sphereGrad.addColorStop(1, outerColor + '0.05)');
               ctx.fillStyle = sphereGrad;
@@ -697,10 +912,10 @@ export const ChamberCanvas: React.FC<ChamberCanvasProps> = ({
               ctx.fill();
             }
           } else {
-            // Gravity > 0: Buoyant Flickering Teardrop Flame with 0G-10G Convective Entrainment
+            // Gravity > 0: Buoyant Organic Flickering Teardrop Flame with Traveling Vortices
             // 1. Flutter frequency scales with sqrt(gravityG)
-            const flutterFreq = 11 + Math.sqrt(gravityG) * 8.5;
-            const flutterAmp = (2.2 + Math.min(gravityG, 4) * 0.7) * scaleFactor;
+            const flutterFreq = 12 + Math.sqrt(gravityG) * 8.0;
+            const flutterAmp = (2.4 + Math.min(gravityG, 4) * 0.75) * scaleFactor;
             const flicker = Math.sin(time * flutterFreq) * flutterAmp;
 
             // 2. Buoyant Elongation: power-law scaling g^0.35 keeps flame bounded and realistic up to 10G
@@ -717,18 +932,28 @@ export const ChamberCanvas: React.FC<ChamberCanvasProps> = ({
             ctx.save();
             ctx.translate(flameCenterX + tiltX, wickTopY);
 
-            // Spawn upward soot particles accelerated by buoyant chimney updraft
-            if (Math.random() < 0.28 * (1 + Math.min(gravityG, 6) * 0.25) && particlesRef.current.length < 55) {
+            // Dynamic Tip Coordinates with High-Frequency Harmonic Sway
+            const tipX = Math.sin(time * flutterFreq * 0.9) * (2.2 + Math.min(gravityG, 4) * 0.9) * scaleFactor;
+            const tipY = -flameH + Math.cos(time * 16) * (2.5 * scaleFactor);
+
+            // Upward Traveling Vortex Waves along flame boundary
+            const wave1L = Math.sin(time * 18 - 1.2) * (2.2 + gravityG * 0.6) * scaleFactor;
+            const wave2L = Math.sin(time * 26 - 2.8) * (2.8 + gravityG * 0.8) * scaleFactor;
+            const wave1R = Math.sin(time * 18 - 1.2 + 1.2) * (2.2 + gravityG * 0.6) * scaleFactor;
+            const wave2R = Math.sin(time * 26 - 2.8 + 1.2) * (2.8 + gravityG * 0.8) * scaleFactor;
+
+            // Periodic Flame Tip Pinch-Off Flamelets (Buoyant Vortex Shedding)
+            if (gravityG >= 0.4 && Math.random() < 0.22 && particlesRef.current.length < 65) {
               particlesRef.current.push({
-                x: flameCenterX + tiltX + (Math.random() - 0.5) * effectiveBaseW * 0.7,
-                y: wickTopY - flameH * 0.88,
-                vx: (Math.random() - 0.5) * 0.8 + tiltX * 0.04,
-                vy: -(1.6 + gravityG * 0.7 + Math.random() * 1.4),
-                size: Math.random() * 2 + 1,
-                alpha: 0.9,
-                maxLife: 28 + Math.random() * 18,
+                x: flameCenterX + tiltX + tipX + (Math.random() - 0.5) * 6,
+                y: wickTopY + tipY - (Math.random() * 8),
+                vx: (Math.random() - 0.5) * 1.2 + (tiltX * 0.05),
+                vy: -(2.4 + gravityG * 1.1 + Math.random() * 1.8),
+                size: Math.random() * 3.5 + 2.0,
+                alpha: 0.95,
+                maxLife: 32 + Math.random() * 20,
                 life: 0,
-                color: Math.random() > 0.4 ? '#f97316' : '#fbbf24',
+                color: Math.random() > 0.35 ? '#fbbf24' : '#f97316',
                 type: 'soot',
               });
             }
@@ -739,29 +964,61 @@ export const ChamberCanvas: React.FC<ChamberCanvasProps> = ({
             ctx.fillStyle = gravityG >= 5 ? 'rgba(59, 130, 246, 0.98)' : 'rgba(37, 99, 235, 0.92)';
             ctx.fill();
 
-            // B. Main Luminous Candle Flame Body (Constricted at base, elongated at tip)
+            // B. Main Luminous Candle Flame Body (Multi-Harmonic Traveling Wave Contour)
             ctx.beginPath();
             ctx.moveTo(-effectiveBaseW, 3 * scaleFactor);
-            ctx.quadraticCurveTo(-effectiveBaseW * 0.85, -flameH * 0.45, 0, -flameH);
-            ctx.quadraticCurveTo(effectiveBaseW * 0.85, -flameH * 0.45, effectiveBaseW, 3 * scaleFactor);
+            // Left wavy boundary
+            ctx.bezierCurveTo(
+              -effectiveBaseW * 0.95 + wave1L,
+              -flameH * 0.35,
+              -effectiveBaseW * 0.55 + wave2L,
+              -flameH * 0.72,
+              tipX,
+              tipY
+            );
+            // Right wavy boundary
+            ctx.bezierCurveTo(
+              effectiveBaseW * 0.55 + wave2R,
+              -flameH * 0.72,
+              effectiveBaseW * 0.95 + wave1R,
+              -flameH * 0.35,
+              effectiveBaseW,
+              3 * scaleFactor
+            );
             ctx.closePath();
 
-            const buoyGrad = ctx.createLinearGradient(0, 3 * scaleFactor, 0, -flameH);
+            const buoyGrad = ctx.createLinearGradient(0, 3 * scaleFactor, tipX, tipY);
             buoyGrad.addColorStop(0, 'rgba(30, 64, 175, 0.96)');
             buoyGrad.addColorStop(0.12, 'rgba(255, 255, 255, 0.98)');
             buoyGrad.addColorStop(0.42, 'rgba(253, 224, 71, 0.98)');
             buoyGrad.addColorStop(0.78, 'rgba(249, 115, 22, 0.94)');
-            buoyGrad.addColorStop(1, gravityG >= 4 ? 'rgba(239, 68, 68, 0.4)' : 'rgba(239, 68, 68, 0.15)');
+            buoyGrad.addColorStop(1, gravityG >= 4 ? 'rgba(239, 68, 68, 0.45)' : 'rgba(239, 68, 68, 0.18)');
             ctx.fillStyle = buoyGrad;
             ctx.fill();
 
-            // C. Inner White-Hot Reaction Core
+            // C. Inner White-Hot Reaction Core with Organic Micro-Flicker
+            const coreTipX = tipX * 0.45;
+            const coreTipY = tipY * 0.65;
             ctx.beginPath();
             ctx.moveTo(-effectiveBaseW * 0.45, 0);
-            ctx.quadraticCurveTo(-effectiveBaseW * 0.35, -flameH * 0.35, 0, -flameH * 0.68);
-            ctx.quadraticCurveTo(effectiveBaseW * 0.35, -flameH * 0.35, effectiveBaseW * 0.45, 0);
+            ctx.bezierCurveTo(
+              -effectiveBaseW * 0.38 + wave1L * 0.4,
+              -flameH * 0.28,
+              -effectiveBaseW * 0.22 + wave2L * 0.4,
+              -flameH * 0.52,
+              coreTipX,
+              coreTipY
+            );
+            ctx.bezierCurveTo(
+              effectiveBaseW * 0.22 + wave2R * 0.4,
+              -flameH * 0.52,
+              effectiveBaseW * 0.38 + wave1R * 0.4,
+              -flameH * 0.28,
+              effectiveBaseW * 0.45,
+              0
+            );
             ctx.closePath();
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.94)';
             ctx.fill();
 
             ctx.restore();
@@ -793,11 +1050,48 @@ export const ChamberCanvas: React.FC<ChamberCanvasProps> = ({
       // Render the pure NASA CFM Specimen Candle Chamber
       renderChamberPhysicalFlame(height * 0.58, 0.72);
 
-      // Interactive Sensor Crosshair Probe
+      // Render D3-based Thermodynamic Thermal Heatmap & Isobar Contours
+      if (showThermalOverlay) {
+        renderD3ThermalOverlay({
+          ctx,
+          width,
+          height,
+          scaleFactor: 0.72 * flameZoomScale,
+          effectivelyBurning,
+          flameTempK,
+          gravityG,
+          ventilationSpeed,
+          o2,
+          co2,
+          starvationProgress,
+          flameZoomScale,
+          palette: thermalPalette,
+          displayMode: thermalDisplayMode,
+          opacity: thermalOpacity,
+          hoveredTemp: hoveredLegendTemp,
+          offscreenCanvas: offscreenThermalCanvasRef.current,
+        });
+      }
+
+      // Interactive Sensor Crosshair Probe with real-time thermography
       if (mousePos) {
         const mx = mousePos.x;
         const my = mousePos.y;
-        ctx.strokeStyle = '#38bdf8';
+        const probeMetrics = getThermalProbeMetrics(mx, my, {
+          width,
+          height,
+          scaleFactor: 0.72 * flameZoomScale,
+          effectivelyBurning,
+          flameTempK,
+          gravityG,
+          ventilationSpeed,
+          o2,
+          co2,
+          starvationProgress,
+          flameZoomScale,
+        });
+
+        ctx.strokeStyle = showThermalOverlay ? '#f43f5e' : '#38bdf8';
         ctx.lineWidth = 1;
         ctx.setLineDash([3, 3]);
         ctx.beginPath();
@@ -808,22 +1102,56 @@ export const ChamberCanvas: React.FC<ChamberCanvasProps> = ({
         ctx.stroke();
         ctx.setLineDash([]);
 
-        // Reticle ring
+        // Dual Reticle rings
         ctx.beginPath();
-        ctx.arc(mx, my, 7, 0, Math.PI * 2);
+        ctx.arc(mx, my, 8, 0, Math.PI * 2);
         ctx.stroke();
-
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
-        ctx.strokeStyle = '#38bdf8';
-        ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.roundRect(mx + 12, my - 24, 135, 24, 4);
+        ctx.arc(mx, my, 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = probeMetrics.zoneColor;
+        ctx.fill();
+
+        // High-precision Thermographic HUD Card
+        const cardW = 168;
+        const cardH = 58;
+        const cardX = mx + 16 + cardW > width ? mx - cardW - 16 : mx + 16;
+        const cardY = my - cardH - 10 < 10 ? my + 16 : my - cardH - 8;
+
+        ctx.save();
+        ctx.fillStyle = 'rgba(10, 15, 30, 0.92)';
+        ctx.strokeStyle = showThermalOverlay ? 'rgba(244, 63, 94, 0.65)' : 'rgba(56, 189, 248, 0.65)';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.roundRect(cardX, cardY, cardW, cardH, 6);
         ctx.fill();
         ctx.stroke();
 
+        // Card header with regime dot and title
+        ctx.fillStyle = probeMetrics.zoneColor;
+        ctx.beginPath();
+        ctx.arc(cardX + 10, cardY + 12, 3, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.font = 'bold 8.5px JetBrains Mono, monospace';
+        ctx.fillText(probeMetrics.zoneName.slice(0, 26), cardX + 18, cardY + 15);
+
+        // Temp Kelvin and Celsius
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 12px JetBrains Mono, monospace';
+        ctx.fillText(`${Math.round(probeMetrics.tempK)} K`, cardX + 10, cardY + 32);
+
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '9px JetBrains Mono, monospace';
+        ctx.fillText(`(${probeMetrics.tempC.toFixed(1)} °C)`, cardX + 68, cardY + 32);
+
+        // Secondary metrics: ∇T and Heat flux q"
         ctx.fillStyle = '#38bdf8';
-        ctx.font = '9px JetBrains Mono';
-        ctx.fillText(`SENSOR: ${Math.round(flameTempK)}K • ${ventilationSpeed}m/s`, mx + 16, my - 9);
+        ctx.font = '8px JetBrains Mono, monospace';
+        ctx.fillText(`∇T: ${probeMetrics.gradientKmm.toFixed(1)} K/mm`, cardX + 10, cardY + 48);
+
+        ctx.fillStyle = '#fbbf24';
+        ctx.fillText(`q": ${probeMetrics.heatFluxKwM2.toFixed(1)} kW/m²`, cardX + 94, cardY + 48);
+        ctx.restore();
       }
 
       animFrameRef.current = requestAnimationFrame(render);
@@ -834,7 +1162,27 @@ export const ChamberCanvas: React.FC<ChamberCanvasProps> = ({
     return () => {
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
     };
-  }, [effectivelyBurning, gravityG, ventilationSpeed, fuel, sparkAnimation, starvationProgress, flameZoomScale, flameGlowMode, mousePos, flameTempK]);
+  }, [
+    effectivelyBurning,
+    gravityG,
+    ventilationSpeed,
+    fuel,
+    sparkAnimation,
+    starvationProgress,
+    flameZoomScale,
+    flameGlowMode,
+    showStreamlines2D,
+    showIsotherms,
+    showThermalOverlay,
+    thermalPalette,
+    thermalDisplayMode,
+    thermalOpacity,
+    hoveredLegendTemp,
+    mousePos,
+    flameTempK,
+    o2,
+    co2,
+  ]);
 
   return (
     <div className="rounded-2xl bg-slate-900/80 border border-slate-800 p-4 shadow-2xl backdrop-blur-xl flex flex-col gap-3">
@@ -1148,8 +1496,132 @@ export const ChamberCanvas: React.FC<ChamberCanvasProps> = ({
               {flameGlowMode === 'ultra' ? '✨ HDR Glow' : 'Standard'}
             </button>
           </div>
+
+          {/* 2D Streamlines & Isotherms Toggles */}
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setShowStreamlines2D(!showStreamlines2D)}
+              className={`px-2 py-0.5 rounded-lg border text-[10px] font-mono transition-all flex items-center gap-1 ${
+                showStreamlines2D
+                  ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200'
+                  : 'bg-slate-950 border-slate-800 text-slate-400'
+              }`}
+              title="Toggle Convective Airflow Streamlines"
+            >
+              <Wind className="w-3 h-3" />
+              <span>Flow</span>
+            </button>
+            <button
+              onClick={() => setShowIsotherms(!showIsotherms)}
+              className={`px-2 py-0.5 rounded-lg border text-[10px] font-mono transition-all flex items-center gap-1 ${
+                showIsotherms
+                  ? 'bg-amber-500/20 border-amber-400 text-amber-200'
+                  : 'bg-slate-950 border-slate-800 text-slate-400'
+              }`}
+              title="Toggle Isothermal Temperature Contours"
+            >
+              <Activity className="w-3 h-3" />
+              <span>Isotherms</span>
+            </button>
+
+            {/* Interactive D3 Thermal Overlay Mode Toggle */}
+            <button
+              onClick={() => setShowThermalOverlay(!showThermalOverlay)}
+              className={`px-2 py-0.5 rounded-lg border text-[10px] font-mono transition-all flex items-center gap-1.5 shadow-sm ${
+                showThermalOverlay
+                  ? 'bg-gradient-to-r from-rose-500/25 to-amber-500/25 border-rose-400 text-rose-200 shadow-rose-950/60'
+                  : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+              }`}
+              title="Toggle D3 Thermodynamic Thermal Heatmap & Isobar Overlays"
+            >
+              <Thermometer className="w-3 h-3 text-rose-400" />
+              <span>Thermal</span>
+              {showThermalOverlay && (
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse" />
+              )}
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* Interactive D3 Thermal Overlay Control Console */}
+      {showThermalOverlay && (
+        <div className="flex flex-wrap items-center justify-between gap-2.5 px-3.5 py-2 rounded-xl bg-slate-950/95 border border-rose-500/35 text-xs font-mono shadow-xl">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <span className="text-rose-400 font-bold flex items-center gap-1.5 text-[11px]">
+              <Thermometer className="w-3.5 h-3.5 text-rose-400" />
+              <span>D3 Thermal Layer:</span>
+            </span>
+
+            {/* D3 Colormap Palette selector */}
+            <div className="flex items-center gap-1 bg-slate-900/90 p-0.5 rounded-lg border border-slate-800">
+              {(
+                [
+                  { id: 'inferno', label: 'FLIR Inferno' },
+                  { id: 'turbo', label: 'NASA Turbo' },
+                  { id: 'plasma', label: 'Plasma' },
+                  { id: 'warm', label: 'IR Warm' },
+                ] as const
+              ).map(({ id, label }) => (
+                <button
+                  key={id}
+                  onClick={() => setThermalPalette(id)}
+                  className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-all ${
+                    thermalPalette === id
+                      ? 'bg-gradient-to-r from-rose-500 to-amber-500 text-slate-950 shadow-sm font-bold'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {/* Display Mode (Heatmap + Isobars, Heatmap Only, Isobars Only) */}
+            <div className="flex items-center gap-1 bg-slate-900/90 p-0.5 rounded-lg border border-slate-800">
+              {(
+                [
+                  { id: 'both', label: 'Heatmap + Isobars' },
+                  { id: 'heatmap', label: 'Heatmap Only' },
+                  { id: 'contours', label: 'Isobars Only' },
+                ] as const
+              ).map(({ id, label }) => (
+                <button
+                  key={id}
+                  onClick={() => setThermalDisplayMode(id)}
+                  className={`px-2 py-0.5 rounded text-[10px] transition-all ${
+                    thermalDisplayMode === id
+                      ? 'bg-cyan-500/25 border border-cyan-400/50 text-cyan-200 font-bold shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Opacity Selector */}
+          <div className="flex items-center gap-2">
+            <span className="text-slate-400 text-[10px]">Heatmap Opacity:</span>
+            <div className="flex items-center gap-1">
+              {[0.35, 0.65, 0.9].map((op) => (
+                <button
+                  key={op}
+                  onClick={() => setThermalOpacity(op)}
+                  className={`px-1.5 py-0.5 rounded text-[9px] border font-mono ${
+                    thermalOpacity === op
+                      ? 'bg-rose-500/20 border-rose-400 text-rose-200 font-bold'
+                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {Math.round(op * 100)}%
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Pure Candle Chamber Viewport */}
       <div className="relative w-full aspect-[16/10] sm:aspect-[16/9] rounded-xl overflow-hidden bg-slate-950 border border-slate-800/90 shadow-inner group">
@@ -1160,16 +1632,142 @@ export const ChamberCanvas: React.FC<ChamberCanvasProps> = ({
           onClick={handleCanvasClick}
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
-          className="w-full h-full object-cover block cursor-crosshair"
+          className={`w-full h-full object-cover block cursor-crosshair transition-all duration-300 ${
+            effectivelyBurning ? 'animate-flame-flicker' : ''
+          }`}
         />
 
-        {/* Live Telemetry Badge */}
-        <div className="absolute bottom-2 left-3 flex items-center gap-3 text-[10px] font-mono text-slate-300 bg-slate-950/85 backdrop-blur-md px-3 py-1 rounded-lg border border-slate-800 flex-wrap">
-          <span>CFM Candle: <strong className="text-amber-300">Paraffin Pillar (Mass: 100%)</strong></span>
-          <span>Chamber Temp: <strong className="text-amber-300">{effectivelyBurning ? `${flameTempK} K` : '298 K'}</strong></span>
-          <span>Acoustic Pitch: <strong className="text-cyan-300">{effectivelyBurning ? `${liveAudioMetrics.pitchHz} Hz` : '0 Hz'}</strong></span>
-          <span>Ventilation Flow: <strong className="text-slate-300">{ventilationSpeed > 0 ? `${ventilationSpeed.toFixed(1)} m/s` : 'Quiescent'}</strong></span>
-          <span>Flame Mode: <strong className={effectivelyBurning ? 'text-emerald-400' : 'text-slate-500'}>{effectivelyBurning ? (gravityG === 0 ? 'Zero-G Blue Sphere' : '1-G Buoyant Flame') : 'Standby'}</strong></span>
+        {/* Subtle dynamic flicker ambient lighting overlay on combustion chamber walls */}
+        {effectivelyBurning && (
+          <div
+            className="absolute inset-0 pointer-events-none mix-blend-screen opacity-30 animate-flame-flicker"
+            style={{
+              background: gravityG === 0
+                ? 'radial-gradient(circle at 50% 50%, rgba(56, 189, 248, 0.16) 0%, rgba(245, 158, 11, 0.08) 35%, transparent 70%)'
+                : 'radial-gradient(circle at 50% 62%, rgba(245, 158, 11, 0.18) 0%, rgba(239, 68, 68, 0.08) 42%, transparent 75%)'
+            }}
+          />
+        )}
+
+        {/* Interactive D3 Thermal Color Legend (FLIR / Spectral Scale) */}
+        {showThermalOverlay && (
+          <div className="absolute top-2.5 right-2.5 bg-slate-950/90 backdrop-blur-md border border-slate-800 rounded-xl p-2.5 shadow-2xl flex flex-col gap-1.5 min-w-[210px] pointer-events-auto">
+            <div className="flex items-center justify-between text-[10px] font-mono">
+              <span className="text-slate-300 font-bold flex items-center gap-1">
+                <Gauge className="w-3 h-3 text-rose-400" />
+                <span>FLIR Thermography</span>
+              </span>
+              <span className="text-rose-400 font-semibold uppercase">{thermalPalette}</span>
+            </div>
+
+            {/* Gradient Bar with Live Probe Needle */}
+            <div className="relative w-full h-3 rounded-full overflow-visible my-1">
+              <div
+                className="w-full h-full rounded-full border border-slate-700/60 shadow-inner"
+                style={{
+                  background:
+                    thermalPalette === 'turbo'
+                      ? 'linear-gradient(to right, #30123b, #28bbec, #a2fc3c, #fb8022, #7a0403)'
+                      : thermalPalette === 'plasma'
+                      ? 'linear-gradient(to right, #0d0887, #7e03a8, #cc4778, #f89540, #f0f921)'
+                      : thermalPalette === 'warm'
+                      ? 'linear-gradient(to right, #6e40aa, #ff5e63, #fdb42f, #aff05b)'
+                      : 'linear-gradient(to right, #000004, #51127c, #b73779, #fc8961, #fec488, #ffffff)',
+                }}
+              />
+
+              {/* Dynamic Needle Marker */}
+              {currentProbeMetrics && (
+                <div
+                  className="absolute -top-1 w-2 h-5 bg-white border border-slate-900 rounded-sm shadow-md transition-all duration-75 pointer-events-none -translate-x-1/2 flex items-center justify-center"
+                  style={{
+                    left: `${Math.max(
+                      0,
+                      Math.min(
+                        100,
+                        ((currentProbeMetrics.tempK - 298.15) /
+                          (Math.max(1200, flameTempK) - 298.15)) *
+                          100
+                      )
+                    )}%`,
+                  }}
+                >
+                  <div className="w-0.5 h-3 bg-rose-600 rounded-full" />
+                </div>
+              )}
+            </div>
+
+            {/* Temperature Axis Markings */}
+            <div className="flex items-center justify-between text-[9px] font-mono text-slate-400">
+              <span>298 K</span>
+              <span>{Math.round((298.15 + Math.max(1200, flameTempK)) / 2)} K</span>
+              <span className="text-rose-300 font-bold">{Math.round(Math.max(1200, flameTempK))} K</span>
+            </div>
+
+            {/* Real-time Probe Readout */}
+            <div className="pt-1 border-t border-slate-800/80 flex items-center justify-between text-[9px] font-mono">
+              <span className="text-slate-400">Sample:</span>
+              <span className="text-emerald-400 font-bold">
+                {currentProbeMetrics ? `${Math.round(currentProbeMetrics.tempK)} K • ${currentProbeMetrics.gradientKmm.toFixed(1)} K/mm` : 'Move cursor over flame'}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Pinned Interactive Thermocouple Crosshair Marker */}
+        {pinnedProbe && pinnedProbeMetrics && (
+          <div
+            className="absolute pointer-events-none -translate-x-1/2 -translate-y-1/2 z-10 flex flex-col items-center"
+            style={{
+              left: `${(pinnedProbe.x / 720) * 100}%`,
+              top: `${(pinnedProbe.y / 405) * 100}%`,
+            }}
+          >
+            <div className="w-5 h-5 rounded-full border-2 border-cyan-400 bg-cyan-500/20 flex items-center justify-center shadow-lg">
+              <div className="w-1.5 h-1.5 rounded-full bg-white" />
+            </div>
+            <div className="mt-1 px-2 py-0.5 rounded bg-slate-950/90 border border-cyan-500/60 text-[10px] font-mono font-bold text-cyan-200 whitespace-nowrap tabular-nums">
+              Pin: {Math.round(pinnedProbeMetrics.tempK)} K
+            </div>
+          </div>
+        )}
+
+        {/* Live Telemetry Badge & Interactive Probe Controls */}
+        <div className="absolute bottom-2 left-3 right-3 flex items-center justify-between gap-3 text-[10px] font-mono text-slate-300 bg-slate-950/85 backdrop-blur-md px-3 py-1 rounded-lg border border-slate-800 flex-wrap">
+          <div className="flex items-center gap-3 flex-wrap">
+            <span>CFM Candle: <strong className="text-amber-300">Paraffin Pillar (Mass: 100%)</strong></span>
+            <span>Chamber Temp: <strong className="text-amber-300">{effectivelyBurning ? `${flameTempK} K` : '298 K'}</strong></span>
+            <span>Acoustic Pitch: <strong className="text-cyan-300">{effectivelyBurning ? `${liveAudioMetrics.pitchHz} Hz` : '0 Hz'}</strong></span>
+            <span>Ventilation Flow: <strong className="text-slate-300">{ventilationSpeed > 0 ? `${ventilationSpeed.toFixed(1)} m/s` : 'Quiescent'}</strong></span>
+            <span>Flame Mode: <strong className={effectivelyBurning ? 'text-emerald-400' : 'text-slate-500'}>{effectivelyBurning ? (gravityG === 0 ? 'Zero-G Blue Sphere' : '1-G Buoyant Flame') : 'Standby'}</strong></span>
+          </div>
+
+          <div className="flex items-center gap-1.5 ml-auto">
+            {pinnedProbe && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setPinnedProbe(null);
+                }}
+                className="px-2 py-0.5 rounded bg-cyan-950 hover:bg-cyan-900 text-cyan-300 border border-cyan-700 font-bold transition-colors"
+                title="Remove pinned thermocouple probe"
+              >
+                Clear Pin
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onVentilationChange?.(Number(Math.min(1.5, ventilationSpeed + 0.25).toFixed(2)));
+              }}
+              className="px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-slate-700 font-bold transition-colors"
+              title="Inject a +0.25 m/s ventilation gust into the chamber"
+            >
+              Gust +0.25 m/s
+            </button>
+          </div>
         </div>
       </div>
 

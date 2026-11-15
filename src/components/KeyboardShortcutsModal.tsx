@@ -24,6 +24,7 @@ import {
   ShieldAlert,
   Siren,
   Sparkles,
+  History,
 } from 'lucide-react';
 
 interface KeyboardShortcutsModalProps {
@@ -95,6 +96,13 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({
       description: 'Interactive randomized spacecraft fire safety scenarios',
       icon: <Siren className="w-4 h-4 text-rose-400" />,
       actionId: '5',
+    },
+    {
+      key: '6',
+      label: 'Mission History View',
+      description: 'Chronological Apollo 1, Apollo 13 & Mir 1997 timeline linked to PSI datasets',
+      icon: <History className="w-4 h-4 text-cyan-400" />,
+      actionId: '6',
     },
     {
       key: '?',

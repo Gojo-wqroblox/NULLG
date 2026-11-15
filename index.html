@@ -3,6 +3,36 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      // Suppress Vite HMR / WebSocket client connection failures in AI Studio iframe environment
+      window.addEventListener('unhandledrejection', function(event) {
+        var reason = event.reason;
+        var msg = reason ? (reason.message || String(reason)) : '';
+        var stack = reason ? (reason.stack || '') : '';
+        if (
+          msg.indexOf('WebSocket') !== -1 ||
+          msg.indexOf('failed to connect') !== -1 ||
+          stack.indexOf('@vite/client') !== -1 ||
+          stack.indexOf('createWebSocketModuleRunnerTransport') !== -1
+        ) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+        }
+      });
+      window.addEventListener('error', function(event) {
+        var msg = event.message || '';
+        var file = event.filename || '';
+        var stack = (event.error && event.error.stack) || '';
+        if (
+          msg.indexOf('WebSocket') !== -1 ||
+          file.indexOf('@vite/client') !== -1 ||
+          stack.indexOf('createWebSocketModuleRunnerTransport') !== -1
+        ) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+        }
+      });
+    </script>
     <title>NULLG: Space Fire Safety Intelligence</title>
     <meta name="description" content="NULLG - Interactive zero-gravity combustion simulator, multi-gas testing chamber, space cadet presentation, and fire safety Super Intelligence." />
     <meta property="og:title" content="NULLG: Space Fire Safety Super Intelligence" />

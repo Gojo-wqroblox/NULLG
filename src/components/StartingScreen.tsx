@@ -13,8 +13,14 @@
 import React, { useState, useEffect } from 'react';
 import { HolographicSpacecraftCanvas } from './HolographicSpacecraftCanvas';
 import { CockpitFloatingFlameCanvas } from './CockpitFloatingFlameCanvas';
+import {
+  SmoothPlanetaryLoginCanvas,
+  PLANETARY_DESTINATIONS,
+  PlanetaryDestination,
+} from './SmoothPlanetaryLoginCanvas';
 import { SwipeToStartSlider } from './SwipeToStartSlider';
 import {
+  Globe,
   Flame,
   Rocket,
   Shield,
@@ -85,8 +91,9 @@ export const StartingScreen: React.FC<StartingScreenProps> = ({
   onStartSimulation,
   initialAstronaut,
 }) => {
-  // Visual scene mode: Holographic Shuttle Wireframe vs Cockpit Zero-G Flame
-  const [sceneMode, setSceneMode] = useState<'shuttle' | 'flame'>('shuttle');
+  // Visual scene mode: CIPHERSLAB Smooth Planetary Hero vs Shuttle vs Flame
+  const [sceneMode, setSceneMode] = useState<'planetary' | 'shuttle' | 'flame'>('planetary');
+  const [destinationId, setDestinationId] = useState<'venus' | 'earth' | 'mars' | 'nullg'>('venus');
 
   // Authentication mode: Login vs Sign Up vs Demo Roster
   const [authMode, setAuthMode] = useState<'login' | 'signup' | 'demo'>('login');
@@ -291,7 +298,19 @@ export const StartingScreen: React.FC<StartingScreenProps> = ({
           {/* Top Stage Navigation & Telemetry Mode */}
           <div className="flex items-center justify-between flex-wrap gap-2 pb-3 border-b border-slate-800/80 z-10">
             <div className="flex items-center gap-2">
-              <div className="flex items-center bg-slate-900 p-1 rounded-xl border border-slate-800">
+              <div className="flex items-center bg-slate-900 p-1 rounded-xl border border-slate-800 flex-wrap gap-1">
+                <button
+                  onClick={() => setSceneMode('planetary')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    sceneMode === 'planetary'
+                      ? 'bg-cyan-500 text-slate-950 shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                  title="Smooth Planetary Celestial UI Animation (CIPHERSLAB)"
+                >
+                  <Globe className="w-3.5 h-3.5" />
+                  <span>Planetary Orbit (Video)</span>
+                </button>
                 <button
                   onClick={() => setSceneMode('shuttle')}
                   className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
@@ -325,7 +344,66 @@ export const StartingScreen: React.FC<StartingScreenProps> = ({
 
           {/* 3D Visualizer Canvas Stage */}
           <div className="relative w-full h-[320px] sm:h-[390px] flex items-center justify-center my-2 overflow-hidden rounded-2xl bg-gradient-to-b from-[#060e1d]/80 to-[#02050c]/90 border border-slate-800/60">
-            {sceneMode === 'shuttle' ? (
+            {sceneMode === 'planetary' ? (
+              <>
+                <SmoothPlanetaryLoginCanvas activeDestinationId={destinationId} />
+
+                {/* Top Celestial Overview Title (Exact match to CIPHERSLAB video) */}
+                <div className="absolute top-4 left-5 pointer-events-none flex flex-col gap-0.5 z-10">
+                  <span className="text-[11px] text-cyan-400 font-mono tracking-widest uppercase font-bold">
+                    {PLANETARY_DESTINATIONS.find((d) => d.id === destinationId)?.number} / OVERVIEW
+                  </span>
+                  <h1 className="text-3xl sm:text-4xl md:text-5xl font-black tracking-widest text-white uppercase drop-shadow-lg">
+                    {PLANETARY_DESTINATIONS.find((d) => d.id === destinationId)?.name}
+                  </h1>
+                  <p className="text-[10px] text-slate-300 font-mono tracking-wider max-w-sm hidden sm:block opacity-90">
+                    {PLANETARY_DESTINATIONS.find((d) => d.id === destinationId)?.tagline}
+                  </p>
+                </div>
+
+                {/* Interactive Destination Pills (Exact match to CIPHERSLAB video) */}
+                <div className="absolute top-4 right-5 pointer-events-auto flex items-center gap-1.5 z-10 flex-wrap">
+                  {PLANETARY_DESTINATIONS.map((dest) => {
+                    const isSelected = dest.id === destinationId;
+                    return (
+                      <button
+                        key={dest.id}
+                        onClick={() => setDestinationId(dest.id)}
+                        className={`px-2.5 py-1 rounded-xl text-[10px] font-mono font-bold transition-all border backdrop-blur-md ${
+                          isSelected
+                            ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-md shadow-cyan-500/40 scale-105'
+                            : 'bg-slate-950/80 text-slate-400 border-slate-800 hover:text-white hover:border-slate-700'
+                        }`}
+                      >
+                        {dest.number} {dest.name}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Bottom Telemetry Flight Status Bar */}
+                <div className="absolute bottom-3 left-4 right-4 pointer-events-none flex items-center justify-between text-[10px] font-mono text-slate-300 bg-slate-950/70 border border-slate-800/80 backdrop-blur-md px-3 py-1.5 rounded-xl z-10 flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-slate-500 uppercase">GRAVITY:</span>
+                    <span className="text-cyan-300 font-bold">
+                      {PLANETARY_DESTINATIONS.find((d) => d.id === destinationId)?.gravityText}
+                    </span>
+                  </div>
+                  <div className="hidden sm:flex items-center gap-2">
+                    <span className="text-slate-500 uppercase">ATMOSPHERE:</span>
+                    <span className="text-amber-300 font-bold">
+                      {PLANETARY_DESTINATIONS.find((d) => d.id === destinationId)?.atmosphereComposition}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-slate-500 uppercase">ORBIT:</span>
+                    <span className="text-emerald-300 font-bold">
+                      {PLANETARY_DESTINATIONS.find((d) => d.id === destinationId)?.orbitalAltitude}
+                    </span>
+                  </div>
+                </div>
+              </>
+            ) : sceneMode === 'shuttle' ? (
               <>
                 <HolographicSpacecraftCanvas />
 

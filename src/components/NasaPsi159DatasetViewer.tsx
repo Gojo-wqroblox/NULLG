@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   PSI_159_METADATA,
   PSI_159_NORMAL_FLAMES,
@@ -35,13 +35,21 @@ interface NasaPsi159DatasetViewerProps {
     testId?: string;
   }) => void;
   onDownloadSimulationReport?: () => void;
+  initialSubTab?: 'normal' | 'inverse';
+  requestSeq?: number;
 }
 
 export const NasaPsi159DatasetViewer: React.FC<NasaPsi159DatasetViewerProps> = ({
   onApplyConditionsToChamber,
   onDownloadSimulationReport,
+  initialSubTab = 'normal',
+  requestSeq = 0,
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'normal' | 'inverse'>('normal');
+  const [activeSubTab, setActiveSubTab] = useState<'normal' | 'inverse'>(initialSubTab);
+
+  useEffect(() => {
+    setActiveSubTab(initialSubTab);
+  }, [initialSubTab, requestSeq]);
   const [fuelFilter, setFuelFilter] = useState<string>('all');
   const [onlyCoolFlames, setOnlyCoolFlames] = useState<boolean>(false);
   const [extinctionFilter, setExtinctionFilter] = useState<string>('all');

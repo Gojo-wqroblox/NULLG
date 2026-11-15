@@ -48,6 +48,12 @@ import {
   Database,
   LineChart,
 } from 'lucide-react';
+import { ZeroGMorphFlameGraphic } from './dashboard-graphics/ZeroGMorphFlameGraphic';
+import { SpacecraftModuleCutawayGraphic } from './dashboard-graphics/SpacecraftModuleCutawayGraphic';
+import { CoolFlameSpectrumGraphic } from './dashboard-graphics/CoolFlameSpectrumGraphic';
+import { EmergencyDecisionFlowchartGraphic } from './dashboard-graphics/EmergencyDecisionFlowchartGraphic';
+import { AudioOscilloscopeGraphic } from './dashboard-graphics/AudioOscilloscopeGraphic';
+import { NasaResourcesArchive } from './NasaResourcesArchive';
 
 interface EmergencyInstructionsDashboardProps {
   isOpen: boolean;
@@ -62,6 +68,7 @@ interface EmergencyInstructionsDashboardProps {
   }) => void;
   onTestAudio?: () => void;
   onTriggerRandomScenario?: () => void;
+  onLaunchEmergencyScenario?: (scenarioId: string) => void;
 }
 
 export const EmergencyInstructionsDashboard: React.FC<EmergencyInstructionsDashboardProps> = ({
@@ -70,8 +77,9 @@ export const EmergencyInstructionsDashboard: React.FC<EmergencyInstructionsDashb
   onSimulateInChamber,
   onTestAudio,
   onTriggerRandomScenario,
+  onLaunchEmergencyScenario,
 }) => {
-  const [activeTab, setActiveTab] = useState<'workflow' | 'atmosphere' | 'physics' | 'protocol' | 'shortcuts' | 'checklist'>('workflow');
+  const [activeTab, setActiveTab] = useState<'workflow' | 'atmosphere' | 'physics' | 'protocol' | 'shortcuts' | 'checklist' | 'nasa_history'>('workflow');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [checkedChecklist, setCheckedChecklist] = useState<Record<string, boolean>>({
     item1: true,
@@ -279,6 +287,18 @@ export const EmergencyInstructionsDashboard: React.FC<EmergencyInstructionsDashb
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
               <span>6. Safety Checklist ({totalChecked}/{checklistItems.length})</span>
             </button>
+
+            <button
+              onClick={() => setActiveTab('nasa_history')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all whitespace-nowrap border ${
+                activeTab === 'nasa_history'
+                  ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-sm'
+                  : 'bg-slate-950 text-slate-400 hover:text-white border-slate-800'
+              }`}
+            >
+              <BookOpen className="w-3.5 h-3.5 text-amber-400" />
+              <span>7. Apollo, Mir &amp; Spinoffs</span>
+            </button>
           </div>
 
           {/* Search bar */}
@@ -313,6 +333,9 @@ export const EmergencyInstructionsDashboard: React.FC<EmergencyInstructionsDashb
                   </p>
                 </div>
               </div>
+
+              {/* Interactive Zero-G Flame Morphology Graphic */}
+              <ZeroGMorphFlameGraphic initialGravity={0.0} initialVentilation={0.15} />
 
               {/* 5 Views Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -525,6 +548,9 @@ export const EmergencyInstructionsDashboard: React.FC<EmergencyInstructionsDashb
                   </p>
                 </div>
               </div>
+
+              {/* Interactive NASA FLEX Cool Flame Optical Spectrum Visualizer */}
+              <CoolFlameSpectrumGraphic />
             </div>
           )}
 
@@ -542,6 +568,12 @@ export const EmergencyInstructionsDashboard: React.FC<EmergencyInstructionsDashb
                   </p>
                 </div>
               </div>
+
+              {/* Interactive ISS Module Cutaway Fire Suppression Sequence Graphic */}
+              <SpacecraftModuleCutawayGraphic />
+
+              {/* Interactive NASA Flight Rule A13-1 Decision Tree Flowchart Graphic */}
+              <EmergencyDecisionFlowchartGraphic />
 
               {/* Step Sequence */}
               <div className="space-y-4">
@@ -647,6 +679,9 @@ export const EmergencyInstructionsDashboard: React.FC<EmergencyInstructionsDashb
                   </p>
                 </div>
               </div>
+
+              {/* Interactive Audio Oscilloscope & Frequency Spectrum Graphic */}
+              <AudioOscilloscopeGraphic onTestSiren={onTestAudio} />
 
               {/* Table of Shortcuts */}
               <div className="rounded-2xl border border-slate-800 overflow-hidden font-mono text-xs">
@@ -780,6 +815,37 @@ export const EmergencyInstructionsDashboard: React.FC<EmergencyInstructionsDashb
                   );
                 })}
               </div>
+            </div>
+          )}
+
+          {/* TAB 7: NASA RESOURCES, HISTORIC FIRES & EARTH SPINOFFS */}
+          {activeTab === 'nasa_history' && (
+            <div className="animate-fadeIn">
+              <NasaResourcesArchive
+                onApplyExperimentConditions={
+                  onSimulateInChamber
+                    ? (conditions) => {
+                        onSimulateInChamber({
+                          gravityG: conditions.gravityG,
+                          o2Pct: conditions.o2Pct,
+                          co2Pct: conditions.co2Pct,
+                          ventilationSpeed: conditions.ventilationSpeed,
+                          fuelName: conditions.fuelName,
+                          pressureKpa: conditions.pressureKpa ?? 101.3,
+                        });
+                        onClose();
+                      }
+                    : undefined
+                }
+                onLaunchEmergencyScenario={
+                  onLaunchEmergencyScenario
+                    ? (scenarioId) => {
+                        onLaunchEmergencyScenario(scenarioId);
+                        onClose();
+                      }
+                    : undefined
+                }
+              />
             </div>
           )}
 

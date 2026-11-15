@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import {
   FlameMeasurement,
   INITIAL_SAMPLE_FLAME_DATASET,
@@ -12,6 +12,7 @@ import { downloadSimulationReportCSV } from '../utils/simulationReportExport';
 import { OxygenTempScatterPlot } from './OxygenTempScatterPlot';
 import { NasaPsi159DatasetViewer } from './NasaPsi159DatasetViewer';
 import { AcmeDiagnosticsSection } from './AcmeDiagnosticsSection';
+import { NasaResourcesArchive } from './NasaResourcesArchive';
 import {
   Table,
   Upload,
@@ -34,6 +35,7 @@ import {
   Compass,
   Cpu,
   FileSpreadsheet,
+  BookOpen,
 } from 'lucide-react';
 
 interface FlameExperimentDatasetViewProps {
@@ -57,6 +59,10 @@ interface FlameExperimentDatasetViewProps {
   fuel?: FuelDefinition;
   isIgnited?: boolean;
   onGasChange?: (gasId: string, val: number) => void;
+  onLaunchEmergencyScenario?: (scenarioId: string) => void;
+  initialExperimentId?: string | null;
+  initialViewMode?: 'programs' | 'psi159' | 'acme_hardware' | 'nasa_archive' | null;
+  experimentRequestSeq?: number;
 }
 
 export const FlameExperimentDatasetView: React.FC<FlameExperimentDatasetViewProps> = ({
@@ -73,11 +79,25 @@ export const FlameExperimentDatasetView: React.FC<FlameExperimentDatasetViewProp
   fuel,
   isIgnited = true,
   onGasChange,
+  onLaunchEmergencyScenario,
+  initialExperimentId,
+  initialViewMode,
+  experimentRequestSeq,
 }) => {
-  const [datasetViewMode, setDatasetViewMode] = useState<'programs' | 'psi159' | 'acme_hardware'>('programs');
+  const [datasetViewMode, setDatasetViewMode] = useState<'programs' | 'psi159' | 'acme_hardware' | 'nasa_archive'>(
+    initialViewMode || 'programs'
+  );
   const [activeDiagnosticMode, setActiveDiagnosticMode] = useState<string>('color');
-  const [selectedExperimentId, setSelectedExperimentId] = useState<string>('sample_101_102');
-  const [dataset, setDataset] = useState<FlameMeasurement[]>(INITIAL_SAMPLE_FLAME_DATASET);
+  const [selectedExperimentId, setSelectedExperimentId] = useState<string>(
+    initialExperimentId || 'sample_101_102'
+  );
+  const [dataset, setDataset] = useState<FlameMeasurement[]>(() => {
+    if (initialExperimentId) {
+      const found = NASA_EXPERIMENTS.find((e) => e.id === initialExperimentId);
+      if (found) return found.sampleRows;
+    }
+    return INITIAL_SAMPLE_FLAME_DATASET;
+  });
   const [selectedRunFilter, setSelectedRunFilter] = useState<string>('all');
   const [isImporting, setIsImporting] = useState<boolean>(false);
   const [pasteCsvText, setPasteCsvText] = useState<string>('');
@@ -85,6 +105,27 @@ export const FlameExperimentDatasetView: React.FC<FlameExperimentDatasetViewProp
   const [hoveredPoint, setHoveredPoint] = useState<FlameMeasurement | null>(null);
   const [graphViewMode, setGraphViewMode] = useState<'split' | 'overlay'>('split');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!initialExperimentId) return;
+    const exp = NASA_EXPERIMENTS.find((e) => e.id === initialExperimentId);
+    if (exp) {
+      setSelectedExperimentId(exp.id);
+      setDataset(exp.sampleRows);
+      setSelectedRunFilter('all');
+      if (initialViewMode) {
+        setDatasetViewMode(initialViewMode);
+      } else if (exp.id.startsWith('psi159')) {
+        setDatasetViewMode('psi159');
+      } else {
+        setDatasetViewMode('programs');
+      }
+      setImportFeedback({
+        type: 'success',
+        message: `Loaded linked NASA dataset: ${exp.name} (${exp.fullName})`,
+      });
+    }
+  }, [initialExperimentId, initialViewMode, experimentRequestSeq]);
 
   // Active NASA Experiment Profile
   const activeExp: NasaExperiment = useMemo(() => {
@@ -303,6 +344,18 @@ export const FlameExperimentDatasetView: React.FC<FlameExperimentDatasetViewProp
           >
             <Cpu className="w-3.5 h-3.5" />
             <span>ACME CIR Hardware & Optics Diagnostics</span>
+          </button>
+
+          <button
+            onClick={() => setDatasetViewMode('nasa_archive')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border active:scale-95 ${
+              datasetViewMode === 'nasa_archive'
+                ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-md shadow-cyan-500/20'
+                : 'bg-slate-900 text-slate-300 border-slate-800 hover:text-white'
+            }`}
+          >
+            <BookOpen className="w-3.5 h-3.5" />
+            <span>NASA Guides, History & Spinoffs</span>
           </button>
         </div>
 
@@ -1147,6 +1200,8 @@ export const FlameExperimentDatasetView: React.FC<FlameExperimentDatasetViewProp
         <NasaPsi159DatasetViewer
           onApplyConditionsToChamber={onApplyExperimentConditions}
           onDownloadSimulationReport={handleDownloadSimulationReport}
+          initialSubTab={selectedExperimentId === 'psi159_inverse' ? 'inverse' : 'normal'}
+          requestSeq={experimentRequestSeq ?? 0}
         />
       )}
 
@@ -1154,6 +1209,17 @@ export const FlameExperimentDatasetView: React.FC<FlameExperimentDatasetViewProp
         <AcmeDiagnosticsSection
           activeDiagnosticMode={activeDiagnosticMode}
           onSelectDiagnosticMode={setActiveDiagnosticMode}
+        />
+      )}
+
+      {datasetViewMode === 'nasa_archive' && (
+        <NasaResourcesArchive
+          onApplyExperimentConditions={onApplyExperimentConditions}
+          onSelectDatasetProgram={(expId) => {
+            setDatasetViewMode('programs');
+            handleSelectNasaExperiment(expId);
+          }}
+          onLaunchEmergencyScenario={onLaunchEmergencyScenario}
         />
       )}
     </div>

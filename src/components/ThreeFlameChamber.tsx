@@ -21,6 +21,12 @@ import {
   Shield,
   Palette,
   Crosshair,
+  Wind,
+  Waves,
+  Compass,
+  Activity,
+  Play,
+  Pause,
 } from 'lucide-react';
 import { FuelDefinition } from '../types';
 import { flameAudio } from '../services/flameAudioService';
@@ -87,7 +93,14 @@ export const ThreeFlameChamber: React.FC<ThreeFlameChamberProps> = ({
 
   // Zero-Occlusion HUD State
   const [isControlsCollapsed, setIsControlsCollapsed] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<'camera' | 'explode' | 'materials' | 'diagnostics'>('camera');
+  const [activeTab, setActiveTab] = useState<'camera' | 'graphics' | 'explode' | 'materials' | 'diagnostics'>('camera');
+
+  // Realistic Visual Graphics & Animation Settings
+  const [showStreamlines3D, setShowStreamlines3D] = useState<boolean>(true);
+  const [showThermalWaves, setShowThermalWaves] = useState<boolean>(true);
+  const [showSparkEmbers, setShowSparkEmbers] = useState<boolean>(true);
+  const [showRadicalHalo, setShowRadicalHalo] = useState<boolean>(true);
+  const [isAutoOrbit, setIsAutoOrbit] = useState<boolean>(false);
 
   // Camera animation interpolation state
   const targetCamPos = useRef<THREE.Vector3>(new THREE.Vector3(0, 1.8, 3.6));
@@ -133,6 +146,11 @@ export const ThreeFlameChamber: React.FC<ThreeFlameChamberProps> = ({
     rigFinish,
     lightingPreset,
     specimenType,
+    showStreamlines3D,
+    showThermalWaves,
+    showSparkEmbers,
+    showRadicalHalo,
+    isAutoOrbit,
   });
 
   useEffect(() => {
@@ -148,8 +166,30 @@ export const ThreeFlameChamber: React.FC<ThreeFlameChamberProps> = ({
       rigFinish,
       lightingPreset,
       specimenType,
+      showStreamlines3D,
+      showThermalWaves,
+      showSparkEmbers,
+      showRadicalHalo,
+      isAutoOrbit,
     };
-  }, [gases, pressureKpa, gravityG, ventilationSpeed, fuel, effectivelyBurning, flameTempK, glassVisibility, rigFinish, lightingPreset, specimenType]);
+  }, [
+    gases,
+    pressureKpa,
+    gravityG,
+    ventilationSpeed,
+    fuel,
+    effectivelyBurning,
+    flameTempK,
+    glassVisibility,
+    rigFinish,
+    lightingPreset,
+    specimenType,
+    showStreamlines3D,
+    showThermalWaves,
+    showSparkEmbers,
+    showRadicalHalo,
+    isAutoOrbit,
+  ]);
 
   // Audio synchronization with flame state
   useEffect(() => {
@@ -612,7 +652,7 @@ export const ThreeFlameChamber: React.FC<ThreeFlameChamberProps> = ({
     flameLight.castShadow = false; // Skip shadow casting for flame light to protect framerate
     flameRootGroup.add(flameLight);
 
-    // Inner Reaction Core Sphere / Teardrop
+    // Inner Oxidation Reaction Core (Highest temperature, brightest luminescence)
     const flameCoreGeo = new THREE.SphereGeometry(0.18, 32, 32);
     const flameCoreMat = new THREE.MeshStandardMaterial({
       color: 0xffffff,
@@ -626,14 +666,14 @@ export const ThreeFlameChamber: React.FC<ThreeFlameChamberProps> = ({
     const flameCoreMesh = new THREE.Mesh(flameCoreGeo, flameCoreMat);
     flameRootGroup.add(flameCoreMesh);
 
-    // Outer Thermal Luminescence Mantle
+    // Middle Thermal Luminescence & Soot Mantle
     const flameMantleGeo = new THREE.SphereGeometry(0.32, 32, 32);
     const flameMantleMat = new THREE.MeshStandardMaterial({
       color: 0xf97316,
       emissive: 0xf59e0b,
       emissiveIntensity: 2.2,
       transparent: true,
-      opacity: 0.62,
+      opacity: 0.65,
       roughness: 0.1,
       metalness: 0.05,
       side: THREE.DoubleSide,
@@ -642,6 +682,18 @@ export const ThreeFlameChamber: React.FC<ThreeFlameChamberProps> = ({
     });
     const flameMantleMesh = new THREE.Mesh(flameMantleGeo, flameMantleMat);
     flameRootGroup.add(flameMantleMesh);
+
+    // Outer Chemiluminescent Radical Sheath (OH* / CH* emission halo)
+    const radicalHaloGeo = new THREE.SphereGeometry(0.44, 32, 32);
+    const radicalHaloMat = new THREE.MeshBasicMaterial({
+      color: 0x2563eb,
+      transparent: true,
+      opacity: 0.32,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const radicalHaloMesh = new THREE.Mesh(radicalHaloGeo, radicalHaloMat);
+    flameRootGroup.add(radicalHaloMesh);
 
     // Basal Blue Chemiluminescence Ring
     const basalRingGeo = new THREE.TorusGeometry(0.14, 0.04, 16, 32);
@@ -657,29 +709,116 @@ export const ThreeFlameChamber: React.FC<ThreeFlameChamberProps> = ({
     flameRootGroup.add(basalRingMesh);
 
     // -------------------------------------------------------------
-    // PART F: MICRO SOOT & DOPPLER STREAMLINE PARTICLES
+    // PART F-1: THERMAL SHOCKWAVE / HEAT SHIMMER CONCENTRIC RINGS
     // -------------------------------------------------------------
-    const particleCount = 120;
+    const thermalWavesGroup = new THREE.Group();
+    flameRootGroup.add(thermalWavesGroup);
+
+    const waveCount = 3;
+    const waveMeshes: THREE.Mesh[] = [];
+    const waveRadii = [0.15, 0.32, 0.48];
+    for (let i = 0; i < waveCount; i++) {
+      const waveGeo = new THREE.RingGeometry(0.04, 0.08, 48);
+      const waveMat = new THREE.MeshBasicMaterial({
+        color: 0x38bdf8,
+        transparent: true,
+        opacity: 0.35,
+        side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+      const waveMesh = new THREE.Mesh(waveGeo, waveMat);
+      waveMesh.rotation.x = Math.PI / 2;
+      thermalWavesGroup.add(waveMesh);
+      waveMeshes.push(waveMesh);
+    }
+
+    // -------------------------------------------------------------
+    // PART F-2: 3D AERODYNAMIC CONVECTION STREAMLINES & TRACER BEADS
+    // -------------------------------------------------------------
+    const streamlinesGroup = new THREE.Group();
+    chamberRigGroup.add(streamlinesGroup);
+
+    const streamlineCount = 12;
+    const streamlinePtsCount = 20;
+    const streamlineLines: THREE.Line[] = [];
+    const streamlineGeos: THREE.BufferGeometry[] = [];
+
+    for (let i = 0; i < streamlineCount; i++) {
+      const geo = new THREE.BufferGeometry();
+      const pos = new Float32Array(streamlinePtsCount * 3);
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      const mat = new THREE.LineBasicMaterial({
+        color: 0x38bdf8,
+        transparent: true,
+        opacity: 0.38,
+        blending: THREE.AdditiveBlending,
+      });
+      const line = new THREE.Line(geo, mat);
+      streamlinesGroup.add(line);
+      streamlineLines.push(line);
+      streamlineGeos.push(geo);
+    }
+
+    // Dynamic Flow Tracer Beads
+    const tracerCount = 48;
+    const tracerGeo = new THREE.BufferGeometry();
+    const tracerPos = new Float32Array(tracerCount * 3);
+    const tracerT = new Float32Array(tracerCount);
+    const tracerLineIdx = new Uint8Array(tracerCount);
+
+    for (let i = 0; i < tracerCount; i++) {
+      tracerT[i] = (i / tracerCount) + Math.random() * 0.1;
+      tracerLineIdx[i] = i % streamlineCount;
+    }
+
+    tracerGeo.setAttribute('position', new THREE.BufferAttribute(tracerPos, 3));
+    const tracerMat = new THREE.PointsMaterial({
+      color: 0x7dd3fc,
+      size: 0.032,
+      transparent: true,
+      opacity: 0.9,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const tracerPoints = new THREE.Points(tracerGeo, tracerMat);
+    streamlinesGroup.add(tracerPoints);
+
+    // -------------------------------------------------------------
+    // PART F-3: 240 MULTI-TIERED EMBER PARTICLES & VORTEX SOOT
+    // -------------------------------------------------------------
+    const particleCount = 240;
     const particleGeo = new THREE.BufferGeometry();
     const particlePos = new Float32Array(particleCount * 3);
+    const particleColors = new Float32Array(particleCount * 3);
     const particleVel = new Float32Array(particleCount * 3);
+    const particleAge = new Float32Array(particleCount);
+    const particleLifespan = new Float32Array(particleCount);
 
     for (let i = 0; i < particleCount; i++) {
-      particlePos[i * 3] = (Math.random() - 0.5) * 0.4;
-      particlePos[i * 3 + 1] = 0.95 + Math.random() * 0.6;
-      particlePos[i * 3 + 2] = (Math.random() - 0.5) * 0.4;
+      particlePos[i * 3] = (Math.random() - 0.5) * 0.25;
+      particlePos[i * 3 + 1] = 0.98 + Math.random() * 0.6;
+      particlePos[i * 3 + 2] = (Math.random() - 0.5) * 0.25;
 
-      particleVel[i * 3] = (Math.random() - 0.5) * 0.05;
+      particleColors[i * 3] = 1.0;
+      particleColors[i * 3 + 1] = 0.85;
+      particleColors[i * 3 + 2] = 0.3;
+
+      particleVel[i * 3] = (Math.random() - 0.5) * 0.06;
       particleVel[i * 3 + 1] = 0.2 + Math.random() * 0.4;
-      particleVel[i * 3 + 2] = (Math.random() - 0.5) * 0.05;
+      particleVel[i * 3 + 2] = (Math.random() - 0.5) * 0.06;
+
+      particleAge[i] = Math.random() * 1.5;
+      particleLifespan[i] = 0.8 + Math.random() * 1.4;
     }
 
     particleGeo.setAttribute('position', new THREE.BufferAttribute(particlePos, 3));
+    particleGeo.setAttribute('color', new THREE.BufferAttribute(particleColors, 3));
     const particleMat = new THREE.PointsMaterial({
-      color: 0xf97316,
-      size: 0.024,
+      size: 0.028,
+      vertexColors: true,
       transparent: true,
-      opacity: 0.75,
+      opacity: 0.85,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
@@ -811,10 +950,23 @@ export const ThreeFlameChamber: React.FC<ThreeFlameChamberProps> = ({
       candleGroup.visible = p.specimenType === 'candle';
       dropletGroup.visible = p.specimenType === 'droplet';
 
+      // Camera Cinematic Auto-Orbit Mode
+      controls.autoRotate = p.isAutoOrbit;
+      controls.autoRotateSpeed = 1.1;
+
+      // Specimen Hot-spot Incandescence
+      const targetWickEmissive = p.isIgnited ? 4.8 : 0.0;
+      emberMat.emissiveIntensity = THREE.MathUtils.damp(emberMat.emissiveIntensity, targetWickEmissive, 3.5, delta);
+      const targetDropletEmissive = p.isIgnited ? 0.95 : 0.05;
+      fuelDropletMat.emissiveIntensity = THREE.MathUtils.damp(fuelDropletMat.emissiveIntensity, targetDropletEmissive, 3.5, delta);
+
       // 7. Flame Morphology & Spectral Emission Dynamics
       if (p.isIgnited) {
         flameRootGroup.visible = true;
-        particlePoints.visible = true;
+        particlePoints.visible = p.showSparkEmbers;
+        radicalHaloMesh.visible = p.showRadicalHalo;
+        thermalWavesGroup.visible = p.showThermalWaves;
+        streamlinesGroup.visible = p.showStreamlines3D;
 
         // Gas-dependent spectral colors
         const o2Pct = (p.gases?.O2 || 0) + (p.gases?.N2O || 0) * 0.7;
@@ -825,36 +977,46 @@ export const ThreeFlameChamber: React.FC<ThreeFlameChamberProps> = ({
         let coreColor = 0xffffff;
         let mantleColor = 0xf97316;
         let lightColor = 0xf59e0b;
+        let radicalColor = 0x2563eb;
 
         if (sih4Pct > 1.2) {
           // Brilliant pyrophoric white silane flame
           coreColor = 0xffffff;
           mantleColor = 0xcffafe;
           lightColor = 0xe0f2fe;
+          radicalColor = 0x38bdf8;
         } else if (h2Pct > 4 && (p.gases?.CH4 || 0) < 4) {
           // Ghost violet hydrogen flame
           coreColor = 0xe9d5ff;
           mantleColor = 0xc084fc;
           lightColor = 0xa855f7;
+          radicalColor = 0x7c3aed;
         } else if (o2Pct < 15) {
           // Hypoxic cool blue chemiluminescence
           coreColor = 0x93c5fd;
           mantleColor = 0x3b82f6;
           lightColor = 0x2563eb;
+          radicalColor = 0x1d4ed8;
         } else if (o2Pct > 35) {
           // Hyperoxic white-hot incandescent flare
           coreColor = 0xffffff;
           mantleColor = 0xfbbf24;
           lightColor = 0xf59e0b;
+          radicalColor = 0x38bdf8;
         }
 
         flameCoreMat.emissive.setHex(coreColor);
         flameMantleMat.color.setHex(mantleColor);
         flameMantleMat.emissive.setHex(mantleColor);
+        radicalHaloMat.color.setHex(radicalColor);
         flameLight.color.setHex(lightColor);
 
         // Flame light flicker
-        flameLight.intensity = (4.0 + Math.sin(time * 12) * 0.7) * (1 - Math.min(0.6, co2Pct / 40));
+        const flickerIntensity = (4.2 + Math.sin(time * 14) * 0.85 + Math.sin(time * 23) * 0.35) * (1 - Math.min(0.6, co2Pct / 40));
+        flameLight.intensity = flickerIntensity;
+
+        // Quartz glass subtle interior illumination bounce
+        quartzGlassMat.attenuationColor = new THREE.Color(lightColor);
 
         // Buoyancy vs Zero-G Spherical Dynamics
         const g = p.gravityG;
@@ -862,14 +1024,15 @@ export const ThreeFlameChamber: React.FC<ThreeFlameChamberProps> = ({
 
         if (g === 0) {
           // 0-G Null Sphere with radial breathing
-          const breathe = Math.sin(time * 3.5) * 0.04;
+          const breathe = Math.sin(time * 3.5) * 0.045;
           const sphereScale = 1.0 + breathe;
           const windShiftX = vent * 0.35;
 
           // Stretch along wind vector if ventilation active
           flameRootGroup.position.set(windShiftX, 1.05 + exp * 0.18, 0);
-          flameCoreMesh.scale.set(sphereScale * (1 + vent * 1.2), sphereScale * 0.9, sphereScale);
+          flameCoreMesh.scale.set(sphereScale * (1 + vent * 1.2), sphereScale * 0.92, sphereScale);
           flameMantleMesh.scale.set(sphereScale * (1 + vent * 1.4), sphereScale, sphereScale);
+          radicalHaloMesh.scale.set(sphereScale * 1.15, sphereScale * 1.12, sphereScale * 1.15);
           basalRingMesh.visible = false;
         } else {
           // Gravity > 0: Buoyant flickering teardrop with convective elongation & base necking
@@ -885,31 +1048,147 @@ export const ThreeFlameChamber: React.FC<ThreeFlameChamberProps> = ({
           flameRootGroup.position.set(windTiltX, 1.05 + exp * 0.18 + (g > 0 ? 0.02 * gBuoyancy : 0), 0);
           flameCoreMesh.scale.set(neckingX * 0.85, elongationY * 0.95, neckingX * 0.85);
           flameMantleMesh.scale.set(neckingX * 1.1, elongationY * 1.35, neckingX * 1.1);
+          radicalHaloMesh.scale.set(neckingX * 1.25, elongationY * 1.45, neckingX * 1.25);
           basalRingMesh.visible = true;
         }
 
-        // Particle System Animation (Buoyant Soot & Radical Drift)
-        const posArr = particleGeo.attributes.position.array as Float32Array;
-        for (let i = 0; i < particleCount; i++) {
-          const idx = i * 3;
-          // Upward velocity accelerated by gravity
-          const vy = (0.3 + g * 0.35) * delta;
-          const vx = (vent * 0.4) * delta + (Math.random() - 0.5) * 0.01;
-
-          posArr[idx] += vx;
-          posArr[idx + 1] += vy;
-
-          // Boundary reset
-          if (posArr[idx + 1] > 1.85 || Math.abs(posArr[idx]) > 0.45) {
-            posArr[idx] = flameRootGroup.position.x + (Math.random() - 0.5) * 0.12;
-            posArr[idx + 1] = 1.02 + Math.random() * 0.1;
-            posArr[idx + 2] = (Math.random() - 0.5) * 0.12;
+        // -----------------------------------------------------------
+        // A. Thermal Heat Shimmer Shockwave Expansion
+        // -----------------------------------------------------------
+        if (p.showThermalWaves) {
+          const waveSpeed = 0.5 + Math.sqrt(g) * 0.35;
+          for (let i = 0; i < waveCount; i++) {
+            waveRadii[i] = ((waveRadii[i] + waveSpeed * delta) % 0.65);
+            const r = waveRadii[i];
+            const mesh = waveMeshes[i];
+            mesh.scale.set(1 + r * 3.5, 1 + r * 3.5, 1);
+            const alpha = Math.max(0, (1 - r / 0.65) * 0.38);
+            (mesh.material as THREE.MeshBasicMaterial).opacity = alpha;
+            (mesh.material as THREE.MeshBasicMaterial).color.setHex(radicalColor);
           }
         }
-        particleGeo.attributes.position.needsUpdate = true;
+
+        // -----------------------------------------------------------
+        // B. 3D Convective Streamlines & Animated Flow Tracers
+        // -----------------------------------------------------------
+        if (p.showStreamlines3D) {
+          const flowSpeed = 0.35 + g * 0.5 + vent * 0.8;
+          for (let i = 0; i < streamlineCount; i++) {
+            const angle = (i / streamlineCount) * Math.PI * 2;
+            const geo = streamlineGeos[i];
+            const pos = geo.attributes.position.array as Float32Array;
+
+            for (let step = 0; step < streamlinePtsCount; step++) {
+              const t = step / (streamlinePtsCount - 1);
+              const y = 0.45 + t * 1.35; // from intake up to cowl exhaust
+
+              // Buoyant necking at flame height y ~ 1.05
+              const distFromFlame = Math.abs(y - 1.05);
+              const necking = g > 0 ? Math.max(0, 1 - distFromFlame * 2.2) * (0.12 * Math.min(2.5, g)) : -0.04;
+              const radius = Math.max(0.12, 0.36 - necking);
+
+              const lateralWind = vent * (y - 0.45) * 0.45;
+              const x = Math.cos(angle) * radius + lateralWind;
+              const z = Math.sin(angle) * radius;
+
+              const idx = step * 3;
+              pos[idx] = x;
+              pos[idx + 1] = y;
+              pos[idx + 2] = z;
+            }
+            geo.attributes.position.needsUpdate = true;
+          }
+
+          // Advance Flow Tracer Beads
+          const tracerPosArr = tracerGeo.attributes.position.array as Float32Array;
+          for (let i = 0; i < tracerCount; i++) {
+            tracerT[i] = (tracerT[i] + flowSpeed * 0.45 * delta) % 1.0;
+            const t = tracerT[i];
+            const lineIdx = tracerLineIdx[i];
+            const linePos = streamlineGeos[lineIdx].attributes.position.array as Float32Array;
+
+            // Interpolate position along line
+            const rawIdx = t * (streamlinePtsCount - 1);
+            const idxA = Math.floor(rawIdx);
+            const idxB = Math.min(streamlinePtsCount - 1, idxA + 1);
+            const frac = rawIdx - idxA;
+
+            tracerPosArr[i * 3] = linePos[idxA * 3] * (1 - frac) + linePos[idxB * 3] * frac;
+            tracerPosArr[i * 3 + 1] = linePos[idxA * 3 + 1] * (1 - frac) + linePos[idxB * 3 + 1] * frac;
+            tracerPosArr[i * 3 + 2] = linePos[idxA * 3 + 2] * (1 - frac) + linePos[idxB * 3 + 2] * frac;
+          }
+          tracerGeo.attributes.position.needsUpdate = true;
+        }
+
+        // -----------------------------------------------------------
+        // C. 240 Multi-Colored Combustion Embers & Micro-Vortex Physics
+        // -----------------------------------------------------------
+        if (p.showSparkEmbers) {
+          const posArr = particleGeo.attributes.position.array as Float32Array;
+          const colArr = particleGeo.attributes.color.array as Float32Array;
+
+          for (let i = 0; i < particleCount; i++) {
+            const idx = i * 3;
+            particleAge[i] += delta;
+
+            if (particleAge[i] >= particleLifespan[i] || posArr[idx + 1] > 1.95 || Math.abs(posArr[idx]) > 0.48) {
+              // Reset particle at reaction core
+              particleAge[i] = 0;
+              particleLifespan[i] = 0.6 + Math.random() * 1.4;
+              posArr[idx] = flameRootGroup.position.x + (Math.random() - 0.5) * 0.08;
+              posArr[idx + 1] = 1.03 + Math.random() * 0.08;
+              posArr[idx + 2] = (Math.random() - 0.5) * 0.08;
+
+              // Swirling initial vortex velocities
+              const theta = Math.random() * Math.PI * 2;
+              const radialV = 0.02 + Math.random() * 0.06;
+              particleVel[idx] = Math.cos(theta) * radialV;
+              particleVel[idx + 1] = 0.25 + Math.random() * (0.35 + g * 0.4);
+              particleVel[idx + 2] = Math.sin(theta) * radialV;
+            } else {
+              // Micro-vortex curl turbulence
+              const ageFactor = particleAge[i] / particleLifespan[i];
+              const vy = (0.22 + g * 0.42 + (1 - ageFactor) * 0.3) * delta;
+              const vx = (vent * 0.45) * delta + particleVel[idx] * delta;
+              const vz = particleVel[idx + 2] * delta;
+
+              // Gentle centrifugal vortex rotation
+              const px = posArr[idx] - flameRootGroup.position.x;
+              const pz = posArr[idx + 2];
+              const spinRate = (0.8 + g * 0.6) * delta;
+              posArr[idx] += vx - pz * spinRate;
+              posArr[idx + 1] += vy;
+              posArr[idx + 2] += vz + px * spinRate;
+
+              // Realistic dynamic ember color gradient (White-Hot -> Yellow -> Orange -> Crimson Soot)
+              if (ageFactor < 0.25) {
+                colArr[idx] = 1.0;
+                colArr[idx + 1] = 0.95;
+                colArr[idx + 2] = 0.6;
+              } else if (ageFactor < 0.6) {
+                colArr[idx] = 1.0;
+                colArr[idx + 1] = 0.65;
+                colArr[idx + 2] = 0.15;
+              } else if (ageFactor < 0.85) {
+                colArr[idx] = 0.95;
+                colArr[idx + 1] = 0.25;
+                colArr[idx + 2] = 0.05;
+              } else {
+                // Cooling dark soot flake
+                colArr[idx] = 0.35;
+                colArr[idx + 1] = 0.15;
+                colArr[idx + 2] = 0.08;
+              }
+            }
+          }
+          particleGeo.attributes.position.needsUpdate = true;
+          particleGeo.attributes.color.needsUpdate = true;
+        }
       } else {
         flameRootGroup.visible = false;
         particlePoints.visible = false;
+        thermalWavesGroup.visible = false;
+        streamlinesGroup.visible = false;
       }
 
       renderer.render(scene, camera);
@@ -1025,11 +1304,99 @@ export const ThreeFlameChamber: React.FC<ThreeFlameChamberProps> = ({
           className="w-full h-full cursor-grab active:cursor-grabbing block focus:outline-none"
         />
 
-        {/* Interactive Center Crosshair Sensor Guide (Subtle, Non-occluding) */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none opacity-20 hover:opacity-50 transition-opacity">
-          <div className="w-12 h-12 rounded-full border border-cyan-400/40 flex items-center justify-center">
-            <div className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+        {/* Dynamic Aero-Combustion HUD Telemetry & Tactical Reticle */}
+        <div className="absolute top-3 left-3 z-20 pointer-events-none flex flex-col gap-1.5 font-mono text-[11px]">
+          <div className="px-2.5 py-1.5 rounded-xl bg-slate-950/80 border border-slate-800/80 backdrop-blur-md shadow-lg flex items-center gap-2">
+            <div className={`w-2 h-2 rounded-full ${effectivelyBurning ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`} />
+            <span className="text-slate-400 uppercase text-[10px] tracking-wider">Regime:</span>
+            <span className="text-cyan-300 font-bold">
+              {gravityG === 0 ? '0-G Diffusion Sphere' : `${gravityG.toFixed(1)}G Buoyant Convection`}
+            </span>
+            <span className="text-slate-600">|</span>
+            <span className="text-slate-400 text-[10px]">H/D:</span>
+            <span className="text-amber-300 font-semibold">
+              {(gravityG === 0 ? 1.0 : (1.0 + Math.pow(Math.max(0.01, gravityG), 0.35) * 1.15)).toFixed(2)}
+            </span>
           </div>
+
+          {effectivelyBurning && (
+            <div className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-lg bg-slate-950/60 border border-slate-800/50 backdrop-blur-sm text-[10px] text-slate-400">
+              <span>Ra: <strong className="text-cyan-400">{(gravityG * 4200).toLocaleString()}</strong></span>
+              <span>•</span>
+              <span>Flow: <strong className="text-emerald-400">{ventilationSpeed > 0 ? `${ventilationSpeed.toFixed(2)} m/s` : 'Quiescent'}</strong></span>
+              <span>•</span>
+              <span>Sparks: <strong className="text-amber-400">{showSparkEmbers ? '240 Active' : 'Off'}</strong></span>
+            </div>
+          )}
+        </div>
+
+        {/* Floating Quick Action Graphics Pill Bar (Top Right) */}
+        <div className="absolute top-3 right-3 z-20 pointer-events-auto flex items-center gap-1.5 font-mono text-[10px]">
+          <button
+            onClick={() => setShowStreamlines3D(!showStreamlines3D)}
+            className={`px-2 py-1 rounded-lg border backdrop-blur-md transition-all shadow-md flex items-center gap-1 ${
+              showStreamlines3D
+                ? 'bg-cyan-500/25 text-cyan-300 border-cyan-500/50 font-bold'
+                : 'bg-slate-950/70 text-slate-400 border-slate-800 hover:text-white'
+            }`}
+            title="Toggle 3D Fluid Streamlines"
+          >
+            <Wind className="w-3 h-3" />
+            <span className="hidden md:inline">Flow 3D</span>
+          </button>
+
+          <button
+            onClick={() => setShowThermalWaves(!showThermalWaves)}
+            className={`px-2 py-1 rounded-lg border backdrop-blur-md transition-all shadow-md flex items-center gap-1 ${
+              showThermalWaves
+                ? 'bg-cyan-500/25 text-cyan-300 border-cyan-500/50 font-bold'
+                : 'bg-slate-950/70 text-slate-400 border-slate-800 hover:text-white'
+            }`}
+            title="Toggle Thermal Waves"
+          >
+            <Waves className="w-3 h-3" />
+            <span className="hidden md:inline">Shimmer</span>
+          </button>
+
+          <button
+            onClick={() => setShowSparkEmbers(!showSparkEmbers)}
+            className={`px-2 py-1 rounded-lg border backdrop-blur-md transition-all shadow-md flex items-center gap-1 ${
+              showSparkEmbers
+                ? 'bg-amber-500/25 text-amber-300 border-amber-500/50 font-bold'
+                : 'bg-slate-950/70 text-slate-400 border-slate-800 hover:text-white'
+            }`}
+            title="Toggle Ember Sparks"
+          >
+            <Sparkles className="w-3 h-3" />
+            <span className="hidden md:inline">Embers</span>
+          </button>
+
+          <button
+            onClick={() => setIsAutoOrbit(!isAutoOrbit)}
+            className={`px-2 py-1 rounded-lg border backdrop-blur-md transition-all shadow-md flex items-center gap-1 ${
+              isAutoOrbit
+                ? 'bg-emerald-500/25 text-emerald-300 border-emerald-500/50 font-bold'
+                : 'bg-slate-950/70 text-slate-400 border-slate-800 hover:text-white'
+            }`}
+            title="Toggle Auto-Orbit Camera Motion"
+          >
+            {isAutoOrbit ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
+            <span className="hidden md:inline">Orbit</span>
+          </button>
+        </div>
+
+        {/* Interactive Tactical Combustion Reticle with Corner Brackets */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none w-28 h-28 opacity-30 hover:opacity-70 transition-opacity">
+          {/* Top-Left Bracket */}
+          <div className="absolute top-0 left-0 w-3 h-3 border-t-2 border-l-2 border-cyan-400" />
+          {/* Top-Right Bracket */}
+          <div className="absolute top-0 right-0 w-3 h-3 border-t-2 border-r-2 border-cyan-400" />
+          {/* Bottom-Left Bracket */}
+          <div className="absolute bottom-0 left-0 w-3 h-3 border-b-2 border-l-2 border-cyan-400" />
+          {/* Bottom-Right Bracket */}
+          <div className="absolute bottom-0 right-0 w-3 h-3 border-b-2 border-r-2 border-cyan-400" />
+          {/* Center Target Dot */}
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-cyan-400/80 animate-ping" />
         </div>
       </div>
 
@@ -1046,7 +1413,7 @@ export const ThreeFlameChamber: React.FC<ThreeFlameChamberProps> = ({
         <div className="rounded-2xl bg-slate-950/95 border border-slate-800/90 shadow-2xl backdrop-blur-xl p-2.5 flex flex-col gap-2">
           {/* Dock Category Selector & Collapse Grip */}
           <div className="flex items-center justify-between pb-1.5 border-b border-slate-800/80 text-xs font-mono flex-wrap gap-2">
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
               <button
                 onClick={() => setActiveTab('camera')}
                 className={`flex items-center gap-1 px-2.5 py-1 rounded-lg transition-all ${
@@ -1057,6 +1424,18 @@ export const ThreeFlameChamber: React.FC<ThreeFlameChamberProps> = ({
               >
                 <Camera className="w-3.5 h-3.5" />
                 <span>Camera Views</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('graphics')}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg transition-all ${
+                  activeTab === 'graphics'
+                    ? 'bg-cyan-500 text-slate-950 font-bold shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Visual FX & Motion</span>
               </button>
 
               <button
@@ -1185,6 +1564,86 @@ export const ThreeFlameChamber: React.FC<ThreeFlameChamberProps> = ({
                   }`}
                 >
                   FLEX Droplet
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Category Content: VISUAL FX & MOTION ANIMATIONS */}
+          {activeTab === 'graphics' && (
+            <div className="flex items-center justify-between text-xs font-mono gap-2 flex-wrap pt-0.5">
+              <span className="text-slate-400 text-[11px] hidden sm:inline">Aerodynamic & Thermal FX:</span>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {/* Streamlines Toggle */}
+                <button
+                  onClick={() => setShowStreamlines3D(!showStreamlines3D)}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border transition-all text-[11px] ${
+                    showStreamlines3D
+                      ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 font-bold'
+                      : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
+                  }`}
+                  title="Toggle 3D Fluid Convection Streamlines"
+                >
+                  <Wind className="w-3 h-3" />
+                  <span>3D Convection Flow</span>
+                </button>
+
+                {/* Thermal Waves Toggle */}
+                <button
+                  onClick={() => setShowThermalWaves(!showThermalWaves)}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border transition-all text-[11px] ${
+                    showThermalWaves
+                      ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 font-bold'
+                      : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
+                  }`}
+                  title="Toggle Thermal Wave Heat Shimmer Shockwaves"
+                >
+                  <Waves className="w-3 h-3" />
+                  <span>Thermal Shimmer Waves</span>
+                </button>
+
+                {/* Spark Embers Toggle */}
+                <button
+                  onClick={() => setShowSparkEmbers(!showSparkEmbers)}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border transition-all text-[11px] ${
+                    showSparkEmbers
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 font-bold'
+                      : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
+                  }`}
+                  title="Toggle 240 Micro-Vortex Combustion Embers"
+                >
+                  <Sparkles className="w-3 h-3" />
+                  <span>240-Ember Sparks</span>
+                </button>
+
+                {/* Radical Halo Toggle */}
+                <button
+                  onClick={() => setShowRadicalHalo(!showRadicalHalo)}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border transition-all text-[11px] ${
+                    showRadicalHalo
+                      ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/50 font-bold'
+                      : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
+                  }`}
+                  title="Toggle OH* / CH* Chemiluminescent Radical Sheath"
+                >
+                  <Flame className="w-3 h-3" />
+                  <span>Radical Sheath</span>
+                </button>
+              </div>
+
+              {/* Cinematic Auto-Orbit Switch */}
+              <div className="flex items-center gap-1.5 ml-auto">
+                <button
+                  onClick={() => setIsAutoOrbit(!isAutoOrbit)}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border transition-all text-[11px] ${
+                    isAutoOrbit
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 font-bold'
+                      : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
+                  }`}
+                  title="Smooth Cinematic Auto-Orbit Sweep"
+                >
+                  {isAutoOrbit ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
+                  <span>{isAutoOrbit ? 'Orbiting [Active]' : 'Cinematic Orbit'}</span>
                 </button>
               </div>
             </div>
